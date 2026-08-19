@@ -33,6 +33,13 @@ jobs:
 
       - run: npm ci
 
+      # `npm run security` (part of `npm run ci`) shells out to semgrep,
+      # a Python tool that isn't part of the npm dependency tree.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install semgrep
+
       # forge lint (part of `npm run ci`) needs the Forge CLI, which is a
       # global install on dev machines, not a project dependency.
       - run: npm install -g @forge/cli
