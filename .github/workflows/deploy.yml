@@ -33,6 +33,10 @@ jobs:
 
       - run: npm ci
 
+      # forge lint (part of `npm run ci`) needs the Forge CLI, which is a
+      # global install on dev machines, not a project dependency.
+      - run: npm install -g @forge/cli
+
       - name: Run full validation gate
         run: npm run ci
 
