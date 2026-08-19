@@ -69,10 +69,16 @@ jobs:
 
       - run: npm ci
 
-      - run: npx forge settings set usage-analytics false
+      # Install the CLI explicitly and invoke `forge` directly. Do NOT use
+      # `npx forge` here: the bare name `forge` on npm is an unrelated package
+      # (forge@2.3.0), so npx silently fetches the wrong tool and fails with
+      # "Cannot find module 'settings'".
+      - run: npm install -g @forge/cli
+
+      - run: forge settings set usage-analytics false
 
       - name: Deploy to development
-        run: npx forge deploy --environment development --non-interactive
+        run: forge deploy --environment development --non-interactive
 
   # Production only deploys from a manual workflow run, and only after the
   # `production` GitHub Environment's required reviewers approve it. Configure
@@ -92,7 +98,11 @@ jobs:
 
       - run: npm ci
 
-      - run: npx forge settings set usage-analytics false
+      # See the note in deploy-development: `npx forge` resolves to the wrong
+      # npm package, so install @forge/cli and call `forge` directly.
+      - run: npm install -g @forge/cli
+
+      - run: forge settings set usage-analytics false
 
       - name: Deploy to production
-        run: npx forge deploy --environment production --non-interactive
+        run: forge deploy --environment production --non-interactive
