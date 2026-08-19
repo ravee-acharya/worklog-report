@@ -37,6 +37,11 @@ jobs:
       # global install on dev machines, not a project dependency.
       - run: npm install -g @forge/cli
 
+      # First run of any forge command shows an interactive analytics opt-in
+      # prompt, which crashes on a non-TTY CI runner ("Prompts can not be
+      # meaningfully rendered in non-TTY environments"). Answer it up front.
+      - run: forge settings set usage-analytics false
+
       - name: Run full validation gate
         run: npm run ci
 
@@ -56,6 +61,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - run: npx forge settings set usage-analytics false
 
       - name: Deploy to development
         run: npx forge deploy --environment development --non-interactive
@@ -77,6 +84,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - run: npx forge settings set usage-analytics false
 
       - name: Deploy to production
         run: npx forge deploy --environment production --non-interactive
