@@ -1,6 +1,5 @@
 node_modules/
 coverage/
-dist/
 build/
 *.log
 .env
@@ -8,3 +7,7 @@ build/
 package-lock.json.bak
 .DS_Store
 .forge/
+
+# Note: no blanket "dist/" rule here. The local vendored packages under
+# .eslint/, .forge-context/, .manifest-rules/, and .testing-framework/ ship
+# their compiled output as dist/ and CI depends on it being committed.
