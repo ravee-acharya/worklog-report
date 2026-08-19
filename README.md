@@ -1,6 +1,8 @@
-# Forge Template (TypeScript)
+# Worklog Report
 
-This template provides a complete Forge app setup with TypeScript, Jest testing, ESLint, and modern development tooling. It serves as a foundation for building more complex Forge applications.
+A Jira Forge app (TypeScript, UI Kit 2) that reports on logged work: pivot tables by
+issue/user/project/date, an exportable CSV, and per-worklog comment export. See
+[DEPLOYMENT.md](DEPLOYMENT.md) for how deploys work.
 
 ## Quick Start
 
