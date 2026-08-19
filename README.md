@@ -1,7 +1,5 @@
 # Forge Template (TypeScript)
 
-<!-- CI/CD pipeline test: this comment verifies the GitHub Actions deploy workflow triggers on push to main. Safe to remove after confirming. -->
-
 This template provides a complete Forge app setup with TypeScript, Jest testing, ESLint, and modern development tooling. It serves as a foundation for building more complex Forge applications.
 
 ## Quick Start
