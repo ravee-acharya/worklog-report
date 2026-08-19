@@ -1,0 +1,25 @@
+modules:
+  jira:globalPage:
+    - key: worklog-report
+      resource: main
+      resolver:
+        function: resolver
+      render: native
+      title: Worklog Report
+      layout: native
+      route: worklog-report
+  function:
+    - key: resolver
+      handler: index.handler
+resources:
+  - key: main
+    path: src/frontend/index.tsx
+app:
+  runtime:
+    name: nodejs22.x
+  id: ari:cloud:ecosystem::app/ad045ff2-dddf-4d5c-9394-1e4bd6e30750
+permissions:
+  scopes:
+    - 'read:jira-work'
+    - 'read:jira-user'
+    - 'storage:app'

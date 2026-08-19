@@ -1,0 +1,78 @@
+name: Deploy Worklog Report
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Environment to deploy after tests pass"
+        required: true
+        default: development
+        type: choice
+        options:
+          - development
+          - production
+
+env:
+  FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+  FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+
+jobs:
+  # Validates the code the same way local development does: manifest checks,
+  # forge lint, type-check, tests with coverage, lint, and static security scan.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run full validation gate
+        run: npm run ci
+
+  # Every push to main auto-deploys to development. No approval gate — this
+  # environment is for verification, not for real users.
+  deploy-development:
+    needs: verify
+    if: github.event_name == 'push' || github.event.inputs.target == 'development'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Deploy to development
+        run: npx forge deploy --environment development --non-interactive
+
+  # Production only deploys from a manual workflow run, and only after the
+  # `production` GitHub Environment's required reviewers approve it. Configure
+  # that approval gate under Settings → Environments → production.
+  deploy-production:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Deploy to production
+        run: npx forge deploy --environment production --non-interactive
