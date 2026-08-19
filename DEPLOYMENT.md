@@ -14,11 +14,31 @@ running `forge deploy` manually from a laptop.
   requires approval from a reviewer on the `production` GitHub Environment before `forge
   deploy --environment production` runs.
 
-`forge deploy` publishes new code to an environment. It does **not** by itself make the app
-usable on a site — that's `forge install`, which only needs to be run once per environment/site
-combination (or again when scopes/permissions change). Run `forge install --environment
-<env> --site dashtech.atlassian.net --product jira` manually the first time, and after any
-manifest permission change; the CI pipeline does not do this for you.
+## Deploy vs. install
+
+`forge deploy` publishes new code to an environment; `forge install` is what makes an app usable
+on a site. The app is already installed on `dashtech.atlassian.net` for both environments, so a
+code-only change needs nothing but a deploy — the installed app picks it up.
+
+The exception is **scope changes**. When `manifest.yml` gains a new permission, the existing
+installation stays pinned to the old scope set until it is upgraded, so the new code runs
+without the permission it expects. The pipeline handles this with a `forge install --upgrade`
+step after each deploy, which is idempotent and a no-op for code-only changes:
+
+- **development** runs it with `--confirm-scopes`, auto-granting new permissions. Low risk, and
+  it keeps the environment usable without manual steps.
+- **production** runs it *without* `--confirm-scopes`. A code-only change upgrades silently; a
+  scope change makes the step **fail on purpose** rather than silently widening the app's
+  permissions on the live site. When that happens, a Jira admin grants consent deliberately —
+  either by approving the app's new scopes in **Manage apps**, or by running the install
+  manually:
+
+  ```bash
+  forge install --upgrade --confirm-scopes --site dashtech.atlassian.net --product jira --environment production
+  ```
+
+A first-time install on a *new* site (not the case today) is still a manual `forge install`
+without `--upgrade`.
 
 ## One-time setup required (do this in the GitHub repo, not via Claude)
 

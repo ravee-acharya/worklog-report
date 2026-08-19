@@ -17,6 +17,7 @@ on:
 env:
   FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
   FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+  FORGE_SITE: dashtech.atlassian.net
 
 jobs:
   # Validates the code the same way local development does: manifest checks,
@@ -80,6 +81,16 @@ jobs:
       - name: Deploy to development
         run: forge deploy --environment development --non-interactive
 
+      # `forge deploy` alone is enough for code-only changes: the already
+      # installed app picks them up. It is NOT enough when the manifest gains
+      # new scopes — the installation stays pinned to the old permission set
+      # until it is upgraded. This step is idempotent, so it is safe to run on
+      # every deploy, and --confirm-scopes auto-grants in development only.
+      - name: Upgrade development installation
+        run: >-
+          forge install --upgrade --non-interactive --confirm-scopes
+          --site "$FORGE_SITE" --product jira --environment development
+
   # Production only deploys from a manual workflow run, and only after the
   # `production` GitHub Environment's required reviewers approve it. Configure
   # that approval gate under Settings → Environments → production.
@@ -106,3 +117,12 @@ jobs:
 
       - name: Deploy to production
         run: forge deploy --environment production --non-interactive
+
+      # Deliberately omits --confirm-scopes. A code-only change upgrades
+      # silently, which is the normal case. If the manifest gained new scopes,
+      # this fails rather than auto-granting new permissions on the live site —
+      # then a Jira admin grants consent deliberately (see DEPLOYMENT.md).
+      - name: Upgrade production installation
+        run: >-
+          forge install --upgrade --non-interactive
+          --site "$FORGE_SITE" --product jira --environment production
