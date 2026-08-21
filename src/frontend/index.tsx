@@ -99,19 +99,27 @@ const mediumFieldStyle = xcss({
   width: '112px',
 });
 
-// Narrower than the original 280px. A JQL query is still free text that can
-// run far longer than this box — Textfield scrolls its own content
-// horizontally rather than growing the box to fit, so a long query stays
-// fully usable; this width is chosen to comfortably show a short-to-medium
-// query (e.g. the placeholder text) without needlessly widening the toolbar's
-// horizontal scroll for the common case.
-const jqlFieldStyle = xcss({
-  minWidth: '190px',
-  width: '190px',
+// From/To hold a formatted date ("8/17/2026") plus the picker's clear icon —
+// shorter than the multi-select fields but longer than the compact tier.
+const dateFieldStyle = xcss({
+  minWidth: '118px',
+  width: '118px',
 });
 
-// Lets the toolbar scroll sideways instead of wrapping onto a second row, so
-// the report table below always gets the rest of the vertical space.
+// A JQL query is free text that can run far longer than this box — Textfield
+// scrolls its own content horizontally rather than growing to fit, so a long
+// query stays usable at any width. This sits on the second toolbar row, which
+// carries fewer controls than the first, so it can afford to be the widest
+// field there and show a short-to-medium query in full.
+const jqlFieldStyle = xcss({
+  minWidth: '260px',
+  width: '260px',
+});
+
+// The toolbar is two fixed rows (filters, then presets/actions). Each row is
+// itself non-wrapping, so on a narrow viewport they scroll sideways together
+// and stay column-aligned with each other rather than reflowing into a
+// ragged, unpredictable number of lines.
 const toolbarScrollStyle = xcss({
   overflowX: 'auto',
   paddingBottom: 'space.050',
@@ -344,10 +352,15 @@ const ISSUE_COLUMN_WIDTH = '260px';
 // longer needs to keep two tables' rows in lockstep — it's just visual
 // consistency now.
 const BODY_CELL_HEIGHT = '32px';
+// Numeric cells are centred to sit directly under their centred column
+// headers (headerCellStyle/headerTotalCellStyle). Text columns
+// (Author/Project/Issue) stay left-aligned — centring names and issue
+// summaries of varying length makes a column much harder to scan.
 const bodyCellStyle = xcss({
   height: BODY_CELL_HEIGHT,
   overflow: 'hidden',
   display: 'block',
+  textAlign: 'center',
   width: DATE_COLUMN_WIDTH,
 });
 
@@ -382,6 +395,7 @@ const bodyTotalCellStyle = xcss({
   height: BODY_CELL_HEIGHT,
   overflow: 'hidden',
   display: 'block',
+  textAlign: 'center',
   width: TOTAL_COLUMN_WIDTH,
 });
 
@@ -419,6 +433,7 @@ const bodyCellWeekendStyle = xcss({
   height: BODY_CELL_HEIGHT,
   overflow: 'hidden',
   display: 'block',
+  textAlign: 'center',
   width: DATE_COLUMN_WIDTH,
   backgroundColor: 'color.background.neutral',
 });
@@ -2242,53 +2257,15 @@ export const App = (): JSX.Element => {
           </SectionMessage>
         )}
 
-        {/* Toolbar — kept to a single row (scrolls horizontally instead of
-            wrapping to a second line) so the report below gets the rest of
-            the vertical space. */}
+        {/* Toolbar — two rows: everything that defines *what* the report
+            covers on the first, and preset/action controls on the second.
+            Each row is non-wrapping so the two scroll together and stay
+            column-aligned on a narrow viewport (see toolbarScrollStyle). */}
         <Box xcss={toolbarStyle}>
           <Box xcss={toolbarScrollStyle}>
-            <Inline space="space.100" alignBlock="end" shouldWrap={false}>
-              {/* Saved Filters */}
-              <Box xcss={fieldStyle}>
-                <Stack space="space.050">
-                  <Label labelFor="saved-filters">Saved Filters</Label>
-                  <Select
-                    id="saved-filters"
-                    options={presetOptions}
-                    value={selectedPreset}
-                    onChange={(val: unknown) => handleLoadPreset(val as SelectOption | null)}
-                    placeholder="Load preset..."
-                    isClearable
-                    isSearchable
-                  />
-                </Stack>
-              </Box>
-
-              {/* Save Filter Button */}
-              <Box>
-                <Stack space="space.050">
-                  <Text>&nbsp;</Text>
-                  <Button appearance="subtle" onClick={() => setIsModalOpen(true)}>
-                    Save Filter
-                  </Button>
-                </Stack>
-              </Box>
-
-              {/* JQL — overrides Projects/Users when non-blank. Given its own
-                  wider field since real queries are much longer than a
-                  dropdown label. */}
-              <Box xcss={jqlFieldStyle}>
-                <Stack space="space.050">
-                  <Label labelFor="jql-filter">JQL {isJqlActive ? '(overrides filters)' : ''}</Label>
-                  <Textfield
-                    id="jql-filter"
-                    placeholder='e.g. project = ABC AND labels = urgent'
-                    value={jqlFilter}
-                    onChange={(e) => setJqlFilter(String(e.target.value ?? ''))}
-                  />
-                </Stack>
-              </Box>
-
+            <Stack space="space.150">
+              {/* Row 1 — report scope: what data, over what range, sliced how. */}
+              <Inline space="space.100" alignBlock="end" shouldWrap={false}>
               {/* Projects — disabled while a JQL query is active, since the
                   JQL takes precedence and a still-active-looking dropdown
                   would misrepresent what the report covers. */}
@@ -2349,7 +2326,7 @@ export const App = (): JSX.Element => {
               </Box>
 
               {/* From date */}
-              <Box xcss={fieldStyle}>
+              <Box xcss={dateFieldStyle}>
                 <Stack space="space.050">
                   <Label labelFor="from-date">From *</Label>
                   <DatePicker
@@ -2365,7 +2342,7 @@ export const App = (): JSX.Element => {
                   year with Period = Month) is fully supported: it's
                   transparently chunked into parallel per-month requests
                   behind the scenes, see fetchChunkedReport. */}
-              <Box xcss={fieldStyle}>
+              <Box xcss={dateFieldStyle}>
                 <Stack space="space.050">
                   <Label labelFor="to-date">To *</Label>
                   <DatePicker
@@ -2456,6 +2433,49 @@ export const App = (): JSX.Element => {
                   />
                 </Stack>
               </Box>
+              </Inline>
+
+              {/* Row 2 — saved presets, the JQL escape hatch, and the actions
+                  that run against whatever row 1 defines. */}
+              <Inline space="space.100" alignBlock="end" shouldWrap={false}>
+              {/* Saved Filters */}
+              <Box xcss={fieldStyle}>
+                <Stack space="space.050">
+                  <Label labelFor="saved-filters">Saved Filters</Label>
+                  <Select
+                    id="saved-filters"
+                    options={presetOptions}
+                    value={selectedPreset}
+                    onChange={(val: unknown) => handleLoadPreset(val as SelectOption | null)}
+                    placeholder="Load preset..."
+                    isClearable
+                    isSearchable
+                  />
+                </Stack>
+              </Box>
+
+              {/* Save Filter Button */}
+              <Box>
+                <Stack space="space.050">
+                  <Text>&nbsp;</Text>
+                  <Button appearance="subtle" onClick={() => setIsModalOpen(true)}>
+                    Save Filter
+                  </Button>
+                </Stack>
+              </Box>
+
+              {/* JQL — overrides Projects/Users when non-blank. */}
+              <Box xcss={jqlFieldStyle}>
+                <Stack space="space.050">
+                  <Label labelFor="jql-filter">JQL {isJqlActive ? '(overrides filters)' : ''}</Label>
+                  <Textfield
+                    id="jql-filter"
+                    placeholder='e.g. project = ABC AND labels = urgent'
+                    value={jqlFilter}
+                    onChange={(e) => setJqlFilter(String(e.target.value ?? ''))}
+                  />
+                </Stack>
+              </Box>
 
               {/* Group Total — checked by default; shows a subtotal row per
                   outer group (e.g. per Author, when 2nd Group = Issues). */}
@@ -2510,7 +2530,8 @@ export const App = (): JSX.Element => {
                   </Button>
                 </Stack>
               </Box>
-            </Inline>
+              </Inline>
+            </Stack>
           </Box>
         </Box>
 
