@@ -877,6 +877,7 @@ function formatIssueLabel(label: string): { key: string | null; display: string 
 }
 
 const FE_SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const FE_SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // Mirrors the resolver's formatDateHeader (src/resolvers/index.ts) — dateLabel
 // is the bucket's start day (a whole week/month/etc. when period isn't 'day').
@@ -904,7 +905,10 @@ function formatDateHeaderLines(dateLabel: string, period: WorklogReportRequest['
       const dd = String(d.getUTCDate()).padStart(2, '0');
       const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
       const yyyy = d.getUTCFullYear();
-      return [`${dd}-${mm}-${yyyy}`, ''];
+      // Weekday on the second line, matching the resolver's CSV header
+      // ("Mon 17-Aug"). Uses getUTCDay to stay consistent with the UTC
+      // parse above and with isWeekendBucket's weekend shading.
+      return [`${dd}-${mm}-${yyyy}`, FE_SHORT_DAYS[d.getUTCDay()]];
     }
   }
 }
