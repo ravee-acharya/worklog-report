@@ -1798,6 +1798,10 @@ resolver.define(
       // date the work was logged against), which the date-range filtering
       // above is based on. Raw ISO string; the frontend formats it for display.
       createdDate: item.worklog.created ?? '',
+      // The exact day the work was logged against. bucketKey below collapses
+      // to the bucket's first day once the period is coarser than 'day', so
+      // this is kept separately for display.
+      loggedDate: getWorklogLoggedDate(item.worklog.started),
       bucketKey: getPeriodBucketKey(getWorklogLoggedDate(item.worklog.started), payload.period ?? 'day'),
     }));
 

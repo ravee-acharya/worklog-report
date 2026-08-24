@@ -161,6 +161,11 @@ export interface WorklogDetailEntry {
   /** ISO timestamp — when the worklog was actually created in Jira (distinct
    * from the "started" date it was logged against). */
   createdDate: string;
+  /** YYYY-MM-DD the work was logged *against* (the worklog's `started` date).
+   * This is the date the report's own columns and filtering are based on, so
+   * unlike bucketKey it is the exact day even when the period groups several
+   * days into one column. */
+  loggedDate: string;
   /** The period-bucket key (matches a report dateLabel) this entry's worked
    * date falls into. Lets the frontend cache one full-range fetch per row and
    * re-filter it client-side for every date cell in that row, instead of

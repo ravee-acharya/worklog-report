@@ -716,6 +716,21 @@ function describeReportError(err: unknown, fallback: string): string {
 /** Formats a raw ISO worklog-created timestamp as "dd-mm-yyyy HH:mm" in the
  * given time zone — consistent with the app's dd-mm-yyyy date convention
  * used elsewhere (date-column headers, CSV export). */
+/**
+ * Render a plain YYYY-MM-DD calendar date as DD-MM-YYYY, matching the report's
+ * own date-column headers. Deliberately does NOT go through Date/Intl: the
+ * value is a calendar date with no time or zone attached, and parsing it into
+ * a Date would reintroduce a timezone that could shift it by a day.
+ */
+export function formatLoggedDate(date: string): string {
+  if (!date) return '-';
+  // Matched strictly rather than just splitting on '-': any three dash-
+  // separated parts would otherwise be reversed, turning an unexpected value
+  // into convincing-looking nonsense instead of passing it through.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : date;
+}
+
 function formatCreatedDate(iso: string, timeZone: string): string {
   if (!iso) return '-';
   try {
@@ -936,6 +951,39 @@ function isWeekendBucket(dateLabel: string, period: WorklogReportRequest['period
   const d = new Date(dateLabel + 'T00:00:00Z');
   const dow = d.getUTCDay();
   return dow === 0 || dow === 6;
+}
+
+/**
+ * A synthetic pivot row standing for "every data row at once", so the Grand
+ * Total cells can reuse handleCellClick unchanged and drill down cumulatively.
+ *
+ * What makes the popup's contents actually add up to the number being clicked
+ * is that both filters handleCellClick derives are unions across every row:
+ *  - issueKeys covers every issue behind the total;
+ *  - the author group columns keep the same author scope the rows themselves
+ *    apply, so a report narrowed to two users doesn't suddenly pull in a third
+ *    user's worklogs that happen to sit on the same issues. When the report
+ *    isn't grouped by author this comes out empty — exactly as it already is
+ *    for an individual row, which then applies no author filter either.
+ */
+export function buildGrandTotalDrillDownRow(
+  rows: WorklogReportResponse['rows'],
+  grandTotal: NonNullable<WorklogReportResponse['grandTotal']>,
+): WorklogReportResponse['rows'][0] {
+  const issueKeys = Array.from(new Set(rows.flatMap((r) => r.issueKeys ?? [])));
+  const authorLabels = Array.from(
+    new Set(
+      rows.flatMap((r) =>
+        r.groupColumns.filter((gc) => gc.dimension === 'author').map((gc) => gc.label),
+      ),
+    ),
+  );
+  return {
+    groupColumns: authorLabels.map((label) => ({ dimension: 'author', label })),
+    dateHours: grandTotal.dateHours.map((dh) => ({ dateLabel: dh.dateLabel, hours: dh.hours })),
+    rowTotalHours: grandTotal.grandTotalHours,
+    issueKeys,
+  };
 }
 
 /** Merge rows from a new batch into the accumulated rows */
@@ -1809,6 +1857,7 @@ export const App = (): JSX.Element => {
             description: 'Worked on implementation',
             timeSpentHours: 2.5,
             createdDate: '2026-08-01T09:15:00.000+0000',
+            loggedDate: '2026-08-01',
             bucketKey: dateLabel ?? '',
           },
         ]);
@@ -2178,11 +2227,20 @@ export const App = (): JSX.Element => {
           </Box>
         ),
       }));
+      const grandTotalRow = buildGrandTotalDrillDownRow(report.rows, gt);
       const gtTotalCell = {
         key: 'total',
+        // Clickable like every other total cell — no dateLabel, so the popup
+        // lists every worklog in the report across the whole range.
         content: (
           <Box xcss={bodyTotalCellStyle}>
-            <Text weight="bold">{formatHours(gt.grandTotalHours, unit)}</Text>
+            {gt.grandTotalHours > 0 ? (
+              <Pressable onClick={() => handleCellClick(grandTotalRow)} xcss={dateValuePressableStyle}>
+                <Text weight="bold">{formatHours(gt.grandTotalHours, unit)}</Text>
+              </Pressable>
+            ) : (
+              <Text weight="bold">{formatHours(gt.grandTotalHours, unit)}</Text>
+            )}
           </Box>
         ),
       };
@@ -2190,9 +2248,21 @@ export const App = (): JSX.Element => {
         const weekend = isWeekendBucket(dh.dateLabel, reportPeriod);
         return {
           key: `date-${idx}`,
+          // Same drill-down as the row cells above, but cumulative: passing
+          // this column's dateLabel filters the union fetch to that one
+          // bucket, so the popup shows every user's worklogs for that column.
           content: (
             <Box xcss={weekend ? bodyCellWeekendStyle : bodyCellStyle}>
-              <Text weight="bold">{formatHours(dh.hours, unit)}</Text>
+              {dh.hours > 0 ? (
+                <Pressable
+                  onClick={() => handleCellClick(grandTotalRow, dh.dateLabel)}
+                  xcss={dateValuePressableStyle}
+                >
+                  <Text weight="bold">{formatHours(dh.hours, unit)}</Text>
+                </Pressable>
+              ) : (
+                <Text weight="bold">{formatHours(dh.hours, unit)}</Text>
+              )}
             </Box>
           ),
         };
@@ -2678,6 +2748,7 @@ export const App = (): JSX.Element => {
                       { key: 'summary', content: 'Issue Summary', isSortable: false },
                       { key: 'comment', content: 'Comment', isSortable: false },
                       { key: 'time', content: 'Time', isSortable: true },
+                      { key: 'loggedDate', content: 'Worklog Date', isSortable: true },
                       { key: 'createdDate', content: 'Worklog Created Date', isSortable: false },
                     ],
                   }}
@@ -2705,6 +2776,14 @@ export const App = (): JSX.Element => {
                       {
                         key: 'time',
                         content: formatHours(entry.timeSpentHours, timeUnit.value),
+                      },
+                      {
+                        key: 'loggedDate',
+                        // The day the work was logged against — the date the
+                        // report's own columns are built from. Distinct from
+                        // createdDate below, which is when the worklog was
+                        // entered into Jira (often a different day).
+                        content: formatLoggedDate(entry.loggedDate),
                       },
                       {
                         key: 'createdDate',

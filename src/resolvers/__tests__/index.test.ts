@@ -1693,6 +1693,145 @@ describe('getWorklogDetails', () => {
     expect(result.data.entries).toHaveLength(1);
     expect(result.data.entries[0].bucketKey).toBe('2026-07-27');
   });
+
+  // loggedDate backs the popup's "Worklog Date" column. It has to be the exact
+  // day the work was logged against — which is neither createdDate (when the
+  // worklog was typed into Jira) nor bucketKey (which collapses to the first
+  // day of the bucket as soon as the period is coarser than 'day').
+  it('returns loggedDate as the exact worked day, distinct from createdDate', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', {
+      status: 200,
+      body: {
+        issues: [
+          {
+            key: 'PROJ-12',
+            fields: {
+              summary: 'Task C',
+              issuetype: { name: 'Task' },
+              status: { name: 'Done' },
+              project: { key: 'PROJ', name: 'Project Alpha' },
+              parent: null,
+              assignee: null,
+            },
+          },
+        ],
+      },
+    });
+
+    addWorklogFixture('PROJ-12', [
+      {
+        id: '1',
+        author: { accountId: 'user1', displayName: 'Alice Smith', accountType: 'atlassian' },
+        started: '2025-01-15T10:00:00.000+0000',
+        created: '2025-01-20T08:30:00.000+0000',
+        timeSpentSeconds: 3600,
+      } as unknown as { id: string; author: { accountId: string; displayName: string; accountType?: string }; started: string; timeSpentSeconds: number },
+    ]);
+
+    const result = await harness.invoke<{
+      entries: Array<{ loggedDate: string; createdDate: string }>;
+    }>('getWorklogDetails', {
+      payload: {
+        issueKeys: ['PROJ-12'],
+        startDate: '2025-01-15',
+        endDate: '2025-01-15',
+        period: 'day',
+      },
+    });
+
+    expect(result.data.entries[0].loggedDate).toBe('2025-01-15');
+    expect(result.data.entries[0].createdDate).toBe('2025-01-20T08:30:00.000+0000');
+  });
+
+  it('keeps loggedDate on the exact day when the period buckets a whole week', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', {
+      status: 200,
+      body: {
+        issues: [
+          {
+            key: 'PROJ-13',
+            fields: {
+              summary: 'Task D',
+              issuetype: { name: 'Task' },
+              status: { name: 'Done' },
+              project: { key: 'PROJ', name: 'Project Alpha' },
+              parent: null,
+              assignee: null,
+            },
+          },
+        ],
+      },
+    });
+
+    addWorklogFixture('PROJ-13', [
+      {
+        id: '1',
+        author: { accountId: 'user1', displayName: 'Alice Smith' },
+        // A Thursday — the ISO week it falls in starts on Monday the 13th.
+        started: '2025-01-16T09:00:00.000+0000',
+        timeSpentSeconds: 3600,
+      },
+    ]);
+
+    const result = await harness.invoke<{
+      entries: Array<{ loggedDate: string; bucketKey: string }>;
+    }>('getWorklogDetails', {
+      payload: {
+        issueKeys: ['PROJ-13'],
+        startDate: '2025-01-13',
+        endDate: '2025-01-19',
+        period: 'week',
+      },
+    });
+
+    // The bucket collapses to the week's Monday; loggedDate must not.
+    expect(result.data.entries[0].bucketKey).toBe('2025-01-13');
+    expect(result.data.entries[0].loggedDate).toBe('2025-01-16');
+  });
+
+  // Same trap the bucketKey timezone test above guards: a late-evening UTC
+  // worklog must not be shifted into the next day for display either.
+  it('does not timezone-shift loggedDate', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', {
+      status: 200,
+      body: {
+        issues: [
+          {
+            key: 'PROJ-14',
+            fields: {
+              summary: 'Task E',
+              issuetype: { name: 'Task' },
+              status: { name: 'Done' },
+              project: { key: 'PROJ', name: 'Project Alpha' },
+              parent: null,
+              assignee: null,
+            },
+          },
+        ],
+      },
+    });
+
+    addWorklogFixture('PROJ-14', [
+      {
+        id: '1',
+        author: { accountId: 'user1', displayName: 'Hitesh' },
+        started: '2026-07-31T22:58:00.000+0000',
+        timeSpentSeconds: 3600,
+      },
+    ]);
+
+    const result = await harness.invoke<{ entries: Array<{ loggedDate: string }> }>('getWorklogDetails', {
+      payload: {
+        issueKeys: ['PROJ-14'],
+        startDate: '2026-07-27',
+        endDate: '2026-08-09',
+        period: 'day',
+        timeZone: 'Asia/Calcutta',
+      },
+    });
+
+    expect(result.data.entries[0].loggedDate).toBe('2026-07-31');
+  });
 });
 
 // ===========================================================================
