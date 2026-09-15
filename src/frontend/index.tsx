@@ -954,6 +954,39 @@ function isWeekendBucket(dateLabel: string, period: WorklogReportRequest['period
 }
 
 /**
+ * Which authors the drill-down popup should be restricted to, so it lists
+ * exactly the worklogs the clicked cell counted.
+ *
+ * Two independent scopes narrow a cell, and the popup has to respect both:
+ *  - the row's own author, when the report is grouped/categorized by user;
+ *  - the toolbar's Users filter, which applies to every cell in the report.
+ *
+ * Only the first was ever applied, so a report filtered to one user but
+ * grouped by anything else (Project, Issues, …) opened a popup listing every
+ * author who had touched those issues — the popup's rows then didn't add up
+ * to the number that was clicked.
+ *
+ * The row's author is preferred when it resolves, being the narrower of the
+ * two. Falling back to the report-wide filter also covers the case where the
+ * display-name lookup below fails: a stale or project-scoped user list would
+ * otherwise silently drop the filter entirely and widen the popup to everyone.
+ */
+export function resolveDrillDownAuthorIds(
+  groupColumns: Array<{ dimension: string; label: string }>,
+  users: Array<{ accountId: string; displayName: string }> | undefined,
+  reportAuthorIds: string[],
+): string[] {
+  const rowAuthorIds = groupColumns
+    .filter((gc) => gc.dimension === 'author')
+    // groupColumns carry only a display label, so the accountId has to be
+    // recovered from the filter options by name.
+    .map((gc) => users?.find((u) => u.displayName === gc.label)?.accountId)
+    .filter((id): id is string => !!id);
+
+  return rowAuthorIds.length > 0 ? rowAuthorIds : reportAuthorIds;
+}
+
+/**
  * A synthetic pivot row standing for "every data row at once", so the Grand
  * Total cells can reuse handleCellClick unchanged and drill down cumulatively.
  *
@@ -1379,6 +1412,13 @@ export const App = (): JSX.Element => {
     start: startDate,
     end: endDate,
   });
+  // The Users filter the *displayed* report was fetched with, snapshotted for
+  // the same reason as reportPeriod/reportDateRange above. The detail popup
+  // needs it to scope its results to the same authors the report counted —
+  // without it a report filtered to one user but grouped by something else
+  // drills down into every author who touched the same issues. Empty when the
+  // report covers all users, or when a JQL query overrode the Users filter.
+  const [reportAuthorIds, setReportAuthorIds] = useState<string[]>([]);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -1563,10 +1603,14 @@ export const App = (): JSX.Element => {
         reportRef.current = MOCK_REPORT;
         setReportPeriod(period.value as WorklogReportRequest['period']);
         setReportDateRange({ start: startDate, end: endDate });
+        setReportAuthorIds([]);
       } else {
         const req = buildRequest();
         setReportPeriod(req.period);
         setReportDateRange({ start: req.startDate, end: req.endDate });
+        // buildRequest already drops the Users filter when a JQL query
+        // overrides it, so this matches exactly what the report covers.
+        setReportAuthorIds(req.filters?.authors ?? []);
         // A range spanning more than one calendar month is transparently
         // split into per-month chunks and fetched in parallel — see
         // fetchChunkedReport. A single-month range (the common case) is a
@@ -1866,15 +1910,13 @@ export const App = (): JSX.Element => {
 
       // Derive issueKeys from the already-loaded report row data
       const issueKeys = row.issueKeys ?? [];
-      // Derive author accountIds if the row is grouped by author
-      const authorAccountIds = row.groupColumns
-        .filter((gc) => gc.dimension === 'author')
-        .map((gc) => {
-          // Find accountId from filter options by displayName
-          const user = filterOptions?.users.find((u) => u.displayName === gc.label);
-          return user?.accountId;
-        })
-        .filter((id): id is string => !!id);
+      // The row's own author when it's grouped by user, otherwise the
+      // report-wide Users filter — see resolveDrillDownAuthorIds.
+      const authorAccountIds = resolveDrillDownAuthorIds(
+        row.groupColumns,
+        filterOptions?.users,
+        reportAuthorIds,
+      );
 
       // PERFORMANCE: cached by everything EXCEPT dateLabel — every date cell
       // in the same row shares the same issueKeys/authors/range, so the full
@@ -1924,7 +1966,7 @@ export const App = (): JSX.Element => {
         setDetailLoading(false);
       }
     },
-    [filterOptions, reportDateRange, reportPeriod],
+    [filterOptions, reportDateRange, reportPeriod, reportAuthorIds],
   );
 
   // ------------------------------------------------------------------

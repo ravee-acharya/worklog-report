@@ -1694,6 +1694,115 @@ describe('getWorklogDetails', () => {
     expect(result.data.entries[0].bucketKey).toBe('2026-07-27');
   });
 
+  // The other half of the Brij/Riddhi bug: the frontend now always sends the
+  // report's Users filter, and the resolver has to actually honour it. Two
+  // authors, same issue, same day — only the requested one may come back.
+  it('excludes other authors on the same issue and day when authorAccountIds is given', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', {
+      status: 200,
+      body: {
+        issues: [
+          {
+            key: 'HM-934',
+            fields: {
+              summary: 'UAT Feedback: Reporting Phase 1 changes',
+              issuetype: { name: 'Task' },
+              status: { name: 'In Progress' },
+              project: { key: 'HM', name: 'Heritagemedcall' },
+              parent: null,
+              assignee: null,
+            },
+          },
+        ],
+      },
+    });
+
+    addWorklogFixture('HM-934', [
+      {
+        id: '1',
+        author: { accountId: 'brij-1', displayName: 'Brij Shingala' },
+        started: '2026-09-09T09:00:00.000+0000',
+        timeSpentSeconds: 1800, // 0.5h
+      },
+      {
+        id: '2',
+        author: { accountId: 'riddhi-2', displayName: 'Riddhi Makwana' },
+        started: '2026-09-09T11:00:00.000+0000',
+        timeSpentSeconds: 7200, // the stray 2.00h that was showing up
+      },
+    ]);
+
+    const result = await harness.invoke<{
+      entries: Array<{ timeSpentHours: number }>;
+    }>('getWorklogDetails', {
+      payload: {
+        issueKeys: ['HM-934'],
+        startDate: '2026-09-07',
+        endDate: '2026-09-15',
+        authorAccountIds: ['brij-1'],
+        period: 'day',
+      },
+    });
+
+    expect(result.data.entries).toHaveLength(1);
+    expect(result.data.entries[0].timeSpentHours).toBe(0.5);
+    // The popup's rows must sum to the cell that was clicked.
+    const sum = result.data.entries.reduce((a, e) => a + e.timeSpentHours, 0);
+    expect(sum).toBe(0.5);
+  });
+
+  it('returns every author when no authorAccountIds filter is supplied', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', {
+      status: 200,
+      body: {
+        issues: [
+          {
+            key: 'HM-935',
+            fields: {
+              summary: 'Shared task',
+              issuetype: { name: 'Task' },
+              status: { name: 'Done' },
+              project: { key: 'HM', name: 'Heritagemedcall' },
+              parent: null,
+              assignee: null,
+            },
+          },
+        ],
+      },
+    });
+
+    addWorklogFixture('HM-935', [
+      {
+        id: '1',
+        author: { accountId: 'brij-1', displayName: 'Brij Shingala' },
+        started: '2026-09-09T09:00:00.000+0000',
+        timeSpentSeconds: 1800,
+      },
+      {
+        id: '2',
+        author: { accountId: 'riddhi-2', displayName: 'Riddhi Makwana' },
+        started: '2026-09-09T11:00:00.000+0000',
+        timeSpentSeconds: 7200,
+      },
+    ]);
+
+    const result = await harness.invoke<{ entries: Array<{ timeSpentHours: number }> }>(
+      'getWorklogDetails',
+      {
+        payload: {
+          issueKeys: ['HM-935'],
+          startDate: '2026-09-07',
+          endDate: '2026-09-15',
+          period: 'day',
+        },
+      },
+    );
+
+    // No Users filter on the report means the report counted both, so the
+    // popup must too — the fix must not over-restrict.
+    expect(result.data.entries).toHaveLength(2);
+  });
+
   // loggedDate backs the popup's "Worklog Date" column. It has to be the exact
   // day the work was logged against — which is neither createdDate (when the
   // worklog was typed into Jira) nor bucketKey (which collapses to the first

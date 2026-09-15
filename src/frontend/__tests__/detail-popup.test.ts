@@ -1,4 +1,8 @@
-import { buildGrandTotalDrillDownRow, formatLoggedDate } from '../index';
+import {
+  buildGrandTotalDrillDownRow,
+  formatLoggedDate,
+  resolveDrillDownAuthorIds,
+} from '../index';
 import type { WorklogReportResponse } from '../../types/worklog-types';
 
 type Rows = WorklogReportResponse['rows'];
@@ -55,6 +59,104 @@ describe('formatLoggedDate', () => {
 
   it('passes an unexpected format through untouched instead of mangling it', () => {
     expect(formatLoggedDate('not-a-date')).toBe('not-a-date');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveDrillDownAuthorIds — which authors the detail popup may show
+// ---------------------------------------------------------------------------
+describe('resolveDrillDownAuthorIds', () => {
+  const USERS = [
+    { accountId: 'brij-1', displayName: 'Brij Shingala' },
+    { accountId: 'riddhi-2', displayName: 'Riddhi Makwana' },
+  ];
+
+  // The reported bug: report filtered to Brij only, but grouped by something
+  // other than user, so the row carried no author column. The popup then
+  // applied no author filter at all and listed Riddhi's worklogs on the same
+  // issues, so its rows didn't add up to the 4.22 that was clicked.
+  it('falls back to the report Users filter when the row is not grouped by author', () => {
+    const ids = resolveDrillDownAuthorIds(
+      [{ dimension: 'project', label: 'Heritagemedcall' }],
+      USERS,
+      ['brij-1'],
+    );
+
+    expect(ids).toEqual(['brij-1']);
+    expect(ids).not.toContain('riddhi-2');
+  });
+
+  it('uses the row author when the report is grouped by user', () => {
+    const ids = resolveDrillDownAuthorIds(
+      [{ dimension: 'author', label: 'Brij Shingala' }],
+      USERS,
+      ['brij-1', 'riddhi-2'],
+    );
+
+    // The row is the narrower scope — a Brij row must not show Riddhi even
+    // though both users are in the report.
+    expect(ids).toEqual(['brij-1']);
+  });
+
+  it('resolves every author on a multi-author row', () => {
+    const ids = resolveDrillDownAuthorIds(
+      [
+        { dimension: 'author', label: 'Brij Shingala' },
+        { dimension: 'author', label: 'Riddhi Makwana' },
+      ],
+      USERS,
+      [],
+    );
+
+    expect(ids).toEqual(['brij-1', 'riddhi-2']);
+  });
+
+  // groupColumns only carry a display label, so the accountId is recovered by
+  // name. A project-scoped or stale user list makes that lookup miss — which
+  // used to drop the filter entirely and widen the popup to every author.
+  it('falls back to the report filter when the display-name lookup misses', () => {
+    const ids = resolveDrillDownAuthorIds(
+      [{ dimension: 'author', label: 'Brij Shingala' }],
+      [{ accountId: 'someone-else', displayName: 'Someone Else' }],
+      ['brij-1'],
+    );
+
+    expect(ids).toEqual(['brij-1']);
+  });
+
+  it('falls back when the user list is missing entirely', () => {
+    const ids = resolveDrillDownAuthorIds(
+      [{ dimension: 'author', label: 'Brij Shingala' }],
+      undefined,
+      ['brij-1'],
+    );
+
+    expect(ids).toEqual(['brij-1']);
+  });
+
+  // No Users filter and no author grouping means the report genuinely covers
+  // everyone, so the popup must not invent a restriction.
+  it('returns no filter when the report covers all users', () => {
+    expect(resolveDrillDownAuthorIds([{ dimension: 'project', label: 'HM' }], USERS, [])).toEqual([]);
+  });
+
+  // A JQL query overrides the Users filter, so buildRequest sends no authors
+  // and the snapshot is empty — the popup must stay unfiltered to match.
+  it('stays unfiltered when JQL overrode the Users filter', () => {
+    expect(resolveDrillDownAuthorIds([], USERS, [])).toEqual([]);
+  });
+
+  it('ignores non-author dimensions when picking the row author', () => {
+    const ids = resolveDrillDownAuthorIds(
+      [
+        { dimension: 'project', label: 'Heritagemedcall' },
+        { dimension: 'author', label: 'Riddhi Makwana' },
+      ],
+      USERS,
+      ['brij-1', 'riddhi-2'],
+    );
+
+    expect(ids).toEqual(['riddhi-2']);
   });
 });
 
