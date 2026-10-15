@@ -233,7 +233,7 @@ describe('fetchAllWorklogEntries', () => {
       };
     });
 
-    const entries = await fetchAllWorklogEntries(baseReq());
+    const { entries } = await fetchAllWorklogEntries(baseReq());
 
     expect(call).toBe(3);
     expect(entries.map((e) => e.issueKey)).toEqual(['PROJ-1', 'PROJ-2', 'PROJ-3']);
@@ -262,6 +262,65 @@ describe('fetchAllWorklogEntries', () => {
     expect(seenTokens).toEqual([undefined, 'next-token']);
   });
 
+  // The per-page counts have to be summed, not overwritten — otherwise a
+  // wide report reports only whatever its last page happened to fail.
+  it('sums failed-issue counts across every page', async () => {
+    let call = 0;
+    bridge.mockInvoke('getWorklogEntriesPage', (): WorklogEntriesResponse => {
+      call++;
+      const last = call === 3;
+      return {
+        entries: [],
+        nextPageToken: last ? null : `token-${call}`,
+        isComplete: last,
+        progress: { loadedIssues: 0, totalIssues: 0 },
+        failedIssueCount: 2,
+      };
+    });
+
+    const { failedIssues } = await fetchAllWorklogEntries(baseReq());
+
+    expect(failedIssues).toBe(6);
+  });
+
+  it('sums failed-issue counts across month chunks', async () => {
+    bridge.mockInvoke(
+      'getWorklogEntriesPage',
+      (): WorklogEntriesResponse => ({
+        entries: [],
+        nextPageToken: null,
+        isComplete: true,
+        progress: { loadedIssues: 0, totalIssues: 0 },
+        failedIssueCount: 1,
+      }),
+    );
+
+    // Jan, Feb, Mar — one failure each.
+    const { failedIssues } = await fetchAllWorklogEntries(
+      baseReq({ startDate: '2026-01-10', endDate: '2026-03-05' }),
+    );
+
+    expect(failedIssues).toBe(3);
+  });
+
+  // An older resolver that predates the field sends nothing; that must read
+  // as "no known failures", not NaN propagating into the warning text.
+  it('treats a missing failedIssueCount as zero', async () => {
+    bridge.mockInvoke(
+      'getWorklogEntriesPage',
+      (): WorklogEntriesResponse => ({
+        entries: [],
+        nextPageToken: null,
+        isComplete: true,
+        progress: { loadedIssues: 0, totalIssues: 0 },
+      }),
+    );
+
+    const { failedIssues } = await fetchAllWorklogEntries(baseReq());
+
+    expect(failedIssues).toBe(0);
+  });
+
   it('splits a multi-month range into per-month requests, never outside the range', async () => {
     const seenRanges: Array<{ start: string; end: string }> = [];
     bridge.mockInvoke(
@@ -277,7 +336,7 @@ describe('fetchAllWorklogEntries', () => {
       },
     );
 
-    const entries = await fetchAllWorklogEntries(
+    const { entries } = await fetchAllWorklogEntries(
       baseReq({ startDate: '2026-01-10', endDate: '2026-03-05' }),
     );
 

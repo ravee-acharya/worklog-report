@@ -1135,12 +1135,19 @@ function sortRowsByFirstGroupColumn(rows: WorklogReportResponse['rows']): Worklo
 async function fetchFullReport(
   req: WorklogReportRequest,
   onProgress?: (loadedSoFar: number) => void,
-): Promise<{ headers: string[]; rows: WorklogReportResponse['rows']; loadedIssues: number; totalIssues: number }> {
+): Promise<{
+  headers: string[];
+  rows: WorklogReportResponse['rows'];
+  loadedIssues: number;
+  totalIssues: number;
+  failedIssues: number;
+}> {
   let accumulatedRows: WorklogReportResponse['rows'] = [];
   let headers: string[] = [];
   let pageToken: string | undefined;
   let totalLoaded = 0;
   let totalIssues = 0;
+  let failedIssues = 0;
 
   while (true) {
     const payload = pageToken ? { ...req, pageToken } : req;
@@ -1158,13 +1165,14 @@ async function fetchFullReport(
     accumulatedRows = mergeRows(accumulatedRows, batch.rows);
     totalLoaded += batch.progress.loadedIssues;
     totalIssues = batch.progress.totalIssues;
+    failedIssues += batch.failedIssueCount ?? 0;
     onProgress?.(totalLoaded);
 
     if (batch.isComplete || !batch.nextPageToken) break;
     pageToken = batch.nextPageToken;
   }
 
-  return { headers, rows: accumulatedRows, loadedIssues: totalLoaded, totalIssues };
+  return { headers, rows: accumulatedRows, loadedIssues: totalLoaded, totalIssues, failedIssues };
 }
 
 /**
@@ -1178,7 +1186,13 @@ async function fetchFullReport(
 export async function fetchChunkedReport(
   req: WorklogReportRequest,
   onProgress?: (loadedSoFar: number) => void,
-): Promise<{ headers: string[]; rows: WorklogReportResponse['rows']; loadedIssues: number; totalIssues: number }> {
+): Promise<{
+  headers: string[];
+  rows: WorklogReportResponse['rows'];
+  loadedIssues: number;
+  totalIssues: number;
+  failedIssues: number;
+}> {
   const ranges = splitIntoMonthChunks(req.startDate, req.endDate);
   if (ranges.length <= 1) {
     return fetchFullReport(req, onProgress);
@@ -1200,6 +1214,7 @@ export async function fetchChunkedReport(
     rows: merged.rows,
     loadedIssues: chunkResults.reduce((sum, c) => sum + c.loadedIssues, 0),
     totalIssues: chunkResults.reduce((sum, c) => sum + c.totalIssues, 0),
+    failedIssues: chunkResults.reduce((sum, c) => sum + c.failedIssues, 0),
   };
 }
 
@@ -1297,10 +1312,11 @@ export function buildCommentsCsv(entries: WorklogExportEntry[]): string {
 async function fetchAllWorklogEntriesForRange(
   req: WorklogReportRequest,
   onProgress?: (loadedSoFar: number) => void,
-): Promise<WorklogExportEntry[]> {
+): Promise<{ entries: WorklogExportEntry[]; failedIssues: number }> {
   const entries: WorklogExportEntry[] = [];
   let pageToken: string | undefined;
   let totalLoaded = 0;
+  let failedIssues = 0;
 
   while (true) {
     const payload = pageToken ? { ...req, pageToken } : req;
@@ -1314,13 +1330,14 @@ async function fetchAllWorklogEntriesForRange(
 
     entries.push(...batch.entries);
     totalLoaded += batch.progress.loadedIssues;
+    failedIssues += batch.failedIssueCount ?? 0;
     onProgress?.(totalLoaded);
 
     if (batch.isComplete || !batch.nextPageToken) break;
     pageToken = batch.nextPageToken;
   }
 
-  return entries;
+  return { entries, failedIssues };
 }
 
 /**
@@ -1333,7 +1350,7 @@ async function fetchAllWorklogEntriesForRange(
 export async function fetchAllWorklogEntries(
   req: WorklogReportRequest,
   onProgress?: (loadedSoFar: number) => void,
-): Promise<WorklogExportEntry[]> {
+): Promise<{ entries: WorklogExportEntry[]; failedIssues: number }> {
   const ranges = splitIntoMonthChunks(req.startDate, req.endDate);
   if (ranges.length <= 1) {
     return fetchAllWorklogEntriesForRange(req, onProgress);
@@ -1348,7 +1365,10 @@ export async function fetchAllWorklogEntries(
     });
   });
 
-  return chunkResults.flat();
+  return {
+    entries: chunkResults.flatMap((c) => c.entries),
+    failedIssues: chunkResults.reduce((sum, c) => sum + c.failedIssues, 0),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1419,6 +1439,11 @@ export const App = (): JSX.Element => {
   // drills down into every author who touched the same issues. Empty when the
   // report covers all users, or when a JQL query overrode the Users filter.
   const [reportAuthorIds, setReportAuthorIds] = useState<string[]>([]);
+  // Issues the displayed report could not load worklogs for. Non-zero means
+  // the totals on screen are an undercount — shown as a warning rather than
+  // left silent, because the failure mode it replaces (a throttled report
+  // rendering as an empty one) is indistinguishable from a real empty result.
+  const [failedIssueCount, setFailedIssueCount] = useState(0);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -1445,6 +1470,11 @@ export const App = (): JSX.Element => {
   const [detailEntries, setDetailEntries] = useState<WorklogDetailEntry[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  // Same undercount warning as the report's, for the drill-down popup — its
+  // rows are supposed to add up to the cell that was clicked, so a silently
+  // dropped issue is immediately visible as a discrepancy the user can't
+  // explain.
+  const [detailFailedCount, setDetailFailedCount] = useState(0);
 
   // Ref to track report data for drill-down (avoids stale closures)
   const reportRef = useRef<WorklogReportResponse | null>(null);
@@ -1452,7 +1482,12 @@ export const App = (): JSX.Element => {
   // Cache of full-range Worklog Detail fetches, keyed by everything EXCEPT
   // the clicked date cell's bucket — see handleCellClick. Cleared whenever a
   // new report is generated, since issueKeys/filters may have changed.
-  const detailCacheRef = useRef<Map<string, WorklogDetailEntry[]>>(new Map());
+  // Caches the failed count alongside the entries: a cache hit must reproduce
+  // the same incomplete-data warning, or reopening the popup would quietly
+  // present the undercount as complete.
+  const detailCacheRef = useRef<Map<string, { entries: WorklogDetailEntry[]; failedCount: number }>>(
+    new Map(),
+  );
 
   // Set as soon as the user picks a Period themselves. The stored preference
   // is fetched asynchronously on mount, so without this the response could
@@ -1591,6 +1626,7 @@ export const App = (): JSX.Element => {
     if (errs.length > 0) return;
 
     setError(null);
+    setFailedIssueCount(0);
     setReportLoading(true);
     setLoadedCount(null);
     setReport(null);
@@ -1616,7 +1652,8 @@ export const App = (): JSX.Element => {
         // fetchChunkedReport. A single-month range (the common case) is a
         // single chunk, so this has no extra overhead over the old direct
         // fetchFullReport call.
-        const { headers, rows, loadedIssues, totalIssues } = await fetchChunkedReport(req, setLoadedCount);
+        const { headers, rows, loadedIssues, totalIssues, failedIssues } = await fetchChunkedReport(req, setLoadedCount);
+        setFailedIssueCount(failedIssues);
         const gt = rows.length > 0 ? computeGrandTotal(rows) : null;
         const finalReport: WorklogReportResponse = {
           groupColumnHeaders: headers,
@@ -1738,16 +1775,26 @@ export const App = (): JSX.Element => {
     setCommentsExporting(true);
     try {
       const req = buildRequest();
-      const entries = await fetchAllWorklogEntries(req);
+      const { entries, failedIssues } = await fetchAllWorklogEntries(req);
 
       if (entries.length === 0) {
-        throw new Error('No worklog comments to export - no worklogs matched these filters');
+        // Distinguish "nothing matched" from "we couldn't read it" — the
+        // second is not an empty result and must not be reported as one.
+        throw new Error(
+          failedIssues > 0
+            ? `Couldn't export: Jira didn't return worklogs for ${failedIssues} ${failedIssues === 1 ? 'issue' : 'issues'}, so there is nothing reliable to write. This is usually rate limiting — try again in a few minutes.`
+            : 'No worklog comments to export - no worklogs matched these filters',
+        );
       }
 
       const csvContent = buildCommentsCsv(entries);
       const filename = `worklog-comments-${req.startDate}-to-${req.endDate}.csv`;
 
       downloadCsv(csvContent, filename);
+      // The file is already saved at this point, so this is a warning about
+      // what's in it rather than a failure — silently handing over a short
+      // CSV is the exact harm this change exists to prevent.
+      setFailedIssueCount(failedIssues);
     } catch (err) {
       console.error('Failed to export worklog comments:', err);
       logError({ message: 'Failed to export worklog comments', stack: String(err) });
@@ -1934,12 +1981,16 @@ export const App = (): JSX.Element => {
 
       const cached = detailCacheRef.current.get(cacheKey);
       if (cached) {
-        setDetailEntries(dateLabel ? cached.filter((e) => e.bucketKey === dateLabel) : cached);
+        setDetailEntries(
+          dateLabel ? cached.entries.filter((e) => e.bucketKey === dateLabel) : cached.entries,
+        );
+        setDetailFailedCount(cached.failedCount);
         setDetailLoading(false);
         return;
       }
 
       setDetailEntries([]);
+      setDetailFailedCount(0);
       setDetailLoading(true);
       try {
         const payload = {
@@ -1956,7 +2007,9 @@ export const App = (): JSX.Element => {
         };
         const res = await invoke<WorklogDetailsResponse>('getWorklogDetails', payload);
         const entries = Array.isArray(res?.entries) ? res.entries : [];
-        detailCacheRef.current.set(cacheKey, entries);
+        const failedCount = res?.failedIssueCount ?? 0;
+        detailCacheRef.current.set(cacheKey, { entries, failedCount });
+        setDetailFailedCount(failedCount);
         setDetailEntries(dateLabel ? entries.filter((e) => e.bucketKey === dateLabel) : entries);
       } catch (err) {
         console.error('Failed to load worklog details:', err);
@@ -2369,6 +2422,18 @@ export const App = (): JSX.Element => {
           </SectionMessage>
         )}
 
+        {/* Incomplete data — Jira refused some worklog requests (usually rate
+            limiting under load). The numbers below are real but too low, and
+            saying so is the whole point: this previously rendered as an
+            ordinary empty/short report with no indication anything failed. */}
+        {failedIssueCount > 0 && (
+          <SectionMessage appearance="warning" title="Incomplete report">
+            <Text>
+              {`Jira didn't return worklogs for ${failedIssueCount} ${failedIssueCount === 1 ? 'issue' : 'issues'}, so the totals below are lower than the real figures. This is usually Jira rate-limiting a large report. Narrow the date range or the projects, or run it again in a few minutes.`}
+            </Text>
+          </SectionMessage>
+        )}
+
         {/* Toolbar — two rows: everything that defines *what* the report
             covers on the first, and preset/action controls on the second.
             Each row is non-wrapping so the two scroll together and stay
@@ -2778,10 +2843,29 @@ export const App = (): JSX.Element => {
                   <Text>{detailError}</Text>
                 </SectionMessage>
               ) : detailEntries.length === 0 ? (
-                <SectionMessage appearance="information" title="No Entries">
-                  <Text>No worklog entries found.</Text>
-                </SectionMessage>
+                // The warning takes precedence over "No Entries" here: with
+                // failures, an empty list means "we couldn't look", which is
+                // a different thing to tell the user than "there's nothing".
+                detailFailedCount > 0 ? (
+                  <SectionMessage appearance="warning" title="Couldn't load these entries">
+                    <Text>
+                      {`Jira didn't return worklogs for ${detailFailedCount} ${detailFailedCount === 1 ? 'issue' : 'issues'}, so this list may be missing entries. Close this and try again in a few minutes.`}
+                    </Text>
+                  </SectionMessage>
+                ) : (
+                  <SectionMessage appearance="information" title="No Entries">
+                    <Text>No worklog entries found.</Text>
+                  </SectionMessage>
+                )
               ) : (
+                <Stack space="space.150">
+                {detailFailedCount > 0 && (
+                  <SectionMessage appearance="warning" title="Incomplete list">
+                    <Text>
+                      {`Jira didn't return worklogs for ${detailFailedCount} ${detailFailedCount === 1 ? 'issue' : 'issues'}, so these rows may not add up to the total you clicked.`}
+                    </Text>
+                  </SectionMessage>
+                )}
                 <Box xcss={detailTableScrollStyle}>
                 <DynamicTable
                   head={{
@@ -2844,6 +2928,7 @@ export const App = (): JSX.Element => {
                   label="Worklog detail entries"
                 />
                 </Box>
+                </Stack>
               )}
             </ModalBody>
             <ModalFooter>

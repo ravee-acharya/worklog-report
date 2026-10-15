@@ -44,6 +44,91 @@ async function safeJsonResponse<T>(response: APIResponse): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: retry a Jira request that was throttled or hit a server error
+//
+// A report fans out to hundreds of Jira calls (one issue search per page, then
+// one worklog call per issue), and a single 429 used to be enough to lose that
+// issue's hours. Jira Cloud's limits are cost-based and shared across every
+// app and integration on the site, so a busy period — or another app running a
+// bulk job — makes throttling likely rather than exceptional.
+//
+// Retries are deliberately shallow. Forge kills a function at 25 seconds, so
+// time spent sleeping is time the report doesn't have: every retry is checked
+// against a deadline and skipped if it wouldn't comfortably finish, which
+// degrades to today's behaviour (give up, report it) instead of guaranteeing a
+// timeout. Only 429 and 5xx are retried; 4xx means the request itself is
+// wrong and will fail identically the second time.
+// ---------------------------------------------------------------------------
+
+/**
+ * How long one resolver invocation may spend fetching worklogs *including*
+ * retry sleeps. Forge hard-kills a function at 25 seconds, and a timeout is
+ * strictly worse than an incomplete-but-labelled report, so retries stop well
+ * before that and let the caller report what it couldn't load.
+ */
+const WORKLOG_FETCH_BUDGET_MS = 18000;
+
+const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 3;
+const BASE_BACKOFF_MS = 250;
+const MAX_BACKOFF_MS = 2000;
+
+function isRetryableStatus(status: number): boolean {
+  return RETRY_STATUSES.has(status);
+}
+
+/** Honour Retry-After (seconds, or an HTTP date) when present, else exponential. */
+function backoffMs(response: APIResponse | null, attempt: number): number {
+  const header = (() => {
+    try {
+      return response?.headers?.get?.('retry-after') ?? null;
+    } catch {
+      return null;
+    }
+  })();
+
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1000, MAX_BACKOFF_MS);
+    }
+    const until = Date.parse(header);
+    if (!Number.isNaN(until)) {
+      return Math.min(Math.max(until - Date.now(), 0), MAX_BACKOFF_MS);
+    }
+  }
+
+  return Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS);
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Run a Jira request, retrying it while it is throttled or failing server-side
+ * and the deadline still allows. Returns the last response either way — the
+ * caller decides whether a still-failing response is fatal or recoverable.
+ */
+async function requestJiraWithRetry(
+  send: () => Promise<APIResponse>,
+  deadline: number,
+): Promise<APIResponse> {
+  let response = await send();
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS - 1; attempt++) {
+    if (response.ok || !isRetryableStatus(response.status)) return response;
+
+    const wait = backoffMs(response, attempt);
+    // Don't start a sleep we can't afford: leave room for the retry itself.
+    if (Date.now() + wait + 1000 > deadline) return response;
+
+    await sleep(wait);
+    response = await send();
+  }
+
+  return response;
+}
+
+// ---------------------------------------------------------------------------
 // Helper: Fetch all projects with pagination
 // ---------------------------------------------------------------------------
 
@@ -600,23 +685,45 @@ function isHumanAuthor(author: WorklogEntry['author'] | undefined): boolean {
   return true;
 }
 
+/**
+ * One issue's worklogs, plus whether the call actually succeeded.
+ *
+ * The distinction matters more than it looks. This used to return a bare
+ * array and swallow every error as `[]`, which made "this issue has no
+ * worklogs in range" and "Jira refused to tell us" indistinguishable — a
+ * throttled report rendered as a silently empty one, with no error anywhere
+ * for the user or for us to diagnose from. `failed` is what lets the caller
+ * count those and the UI say so.
+ */
+interface WorklogFetchResult {
+  worklogs: WorklogEntry[];
+  failed: boolean;
+}
+
 async function fetchWorklogs(
   issueKey: string,
   startedAfterMs: number,
   startedBeforeMs: number,
-): Promise<WorklogEntry[]> {
+  deadline: number,
+): Promise<WorklogFetchResult> {
   try {
     const startedAfter = String(startedAfterMs);
     const startedBefore = String(startedBeforeMs);
-    const response = await api
-      .asUser()
-      .requestJira(
-        route`/rest/api/3/issue/${issueKey}/worklog?startedAfter=${startedAfter}&startedBefore=${startedBefore}`,
-      );
+    const response = await requestJiraWithRetry(
+      () =>
+        api
+          .asUser()
+          .requestJira(
+            route`/rest/api/3/issue/${issueKey}/worklog?startedAfter=${startedAfter}&startedBefore=${startedBefore}`,
+          ),
+      deadline,
+    );
 
+    // A deleted or permission-hidden issue genuinely has nothing to
+    // contribute — that's an absence, not a failure, so it isn't counted.
     if (response.status === 404) {
       console.warn(`Issue ${issueKey} not found (404), skipping worklogs`);
-      return [];
+      return { worklogs: [], failed: false };
     }
 
     const data = await safeJsonResponse<{
@@ -629,10 +736,13 @@ async function fetchWorklogs(
       }>;
     }>(response);
 
-    return Array.isArray(data.worklogs) ? data.worklogs : [];
+    return { worklogs: Array.isArray(data.worklogs) ? data.worklogs : [], failed: false };
   } catch (err) {
+    // Still swallowed rather than thrown: one unreachable issue shouldn't
+    // take down a report covering hundreds. But it's now reported upward so
+    // the total can be labelled incomplete instead of quietly wrong.
     console.warn(`Failed to fetch worklogs for ${issueKey}:`, err);
-    return [];
+    return { worklogs: [], failed: true };
   }
 }
 
@@ -742,6 +852,11 @@ interface WorklogPageResult {
   loadedIssues: number;
   totalIssues: number;
   nextPageToken: string | null;
+  /** Issues on this page whose worklogs could not be fetched (throttled or
+   * erroring after retries). Their hours are missing from `worklogs`, so any
+   * total built from this page is an undercount and must be labelled as
+   * such rather than presented as a result. */
+  failedIssueCount: number;
 }
 
 /**
@@ -786,13 +901,16 @@ async function fetchWorklogPage(params: WorklogReportRequest): Promise<WorklogPa
   // Fetch worklogs in batches of 10
   const allWorklogsWithIssue: WorklogWithIssue[] = [];
   const worklogBatchSize = 10;
+  let failedIssueCount = 0;
+  const deadline = Date.now() + WORKLOG_FETCH_BUDGET_MS;
 
   for (let i = 0; i < issues.length; i += worklogBatchSize) {
     const batch = issues.slice(i, i + worklogBatchSize);
     const batchResults = await Promise.all(
       batch.map(async (issue) => {
-        const worklogs = await fetchWorklogs(issue.key, startMs, endMs);
-        return worklogs.map((w) => ({ worklog: w, issue }));
+        const result = await fetchWorklogs(issue.key, startMs, endMs, deadline);
+        if (result.failed) failedIssueCount++;
+        return result.worklogs.map((w) => ({ worklog: w, issue }));
       }),
     );
     for (const results of batchResults) {
@@ -826,6 +944,7 @@ async function fetchWorklogPage(params: WorklogReportRequest): Promise<WorklogPa
     loadedIssues: issues.length,
     totalIssues: page.total,
     nextPageToken: page.nextPageToken,
+    failedIssueCount,
   };
 }
 
@@ -837,7 +956,7 @@ async function fetchWorklogPage(params: WorklogReportRequest): Promise<WorklogPa
 async function buildReportData(
   params: WorklogReportRequest,
 ): Promise<WorklogReportResponse> {
-  const { worklogs: worklogsToProcess, loadedIssues, totalIssues, nextPageToken } =
+  const { worklogs: worklogsToProcess, loadedIssues, totalIssues, nextPageToken, failedIssueCount } =
     await fetchWorklogPage(params);
 
   const dateLabels = generateDateLabels(params.startDate, params.endDate, params.period);
@@ -980,6 +1099,7 @@ async function buildReportData(
     nextPageToken,
     isComplete,
     progress: { loadedIssues, totalIssues },
+    failedIssueCount,
   };
 }
 
@@ -1655,7 +1775,7 @@ resolver.define(
       payload.projectKeys = [];
     }
 
-    const { worklogs, loadedIssues, totalIssues, nextPageToken } =
+    const { worklogs, loadedIssues, totalIssues, nextPageToken, failedIssueCount } =
       await fetchWorklogPage(payload);
 
     // Resolve display names the same way the report's Author column does, so
@@ -1692,6 +1812,7 @@ resolver.define(
       nextPageToken,
       isComplete: nextPageToken === null,
       progress: { loadedIssues, totalIssues },
+      failedIssueCount,
     };
   },
 );
@@ -1733,14 +1854,17 @@ resolver.define(
     // of paying for it on top of the worklog-fetch phase.
     const issueJql = `key in (${payload.issueKeys.map((k) => `"${k}"`).join(', ')})`;
     const batchSize = 10;
+    let failedIssueCount = 0;
+    const deadline = Date.now() + WORKLOG_FETCH_BUDGET_MS;
     const worklogFetchPromise = (async () => {
       const results: Array<{ issueKey: string; worklog: WorklogEntry }> = [];
       for (let i = 0; i < payload.issueKeys.length; i += batchSize) {
         const batch = payload.issueKeys.slice(i, i + batchSize);
         const batchResults = await Promise.all(
           batch.map(async (issueKey) => {
-            const worklogs = await fetchWorklogs(issueKey, startMs, endMs);
-            return worklogs.map((w) => ({ issueKey, worklog: w }));
+            const result = await fetchWorklogs(issueKey, startMs, endMs, deadline);
+            if (result.failed) failedIssueCount++;
+            return result.worklogs.map((w) => ({ issueKey, worklog: w }));
           }),
         );
         for (const r of batchResults) results.push(...r);
@@ -1805,7 +1929,7 @@ resolver.define(
       bucketKey: getPeriodBucketKey(getWorklogLoggedDate(item.worklog.started), payload.period ?? 'day'),
     }));
 
-    return { entries };
+    return { entries, failedIssueCount };
   },
 );
 

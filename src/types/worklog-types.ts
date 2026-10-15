@@ -49,6 +49,11 @@ export interface WorklogReportResponse {
   nextPageToken: string | null;
   isComplete: boolean;
   progress: { loadedIssues: number; totalIssues: number };
+  /** Issues whose worklogs could not be fetched (throttled, or erroring
+   * after retries). Non-zero means the hours here are an UNDERCOUNT and must
+   * be presented as incomplete — the alternative, which this replaced, was a
+   * silently empty report that looked like a legitimate "no work logged". */
+  failedIssueCount?: number;
 }
 
 export interface CsvExportResponse {
@@ -140,6 +145,9 @@ export interface WorklogEntriesResponse {
   nextPageToken: string | null;
   isComplete: boolean;
   progress: { loadedIssues: number; totalIssues: number };
+  /** See WorklogReportResponse.failedIssueCount — an export missing rows is
+   * worse than a report missing them, since the file outlives the screen. */
+  failedIssueCount?: number;
 }
 
 export interface WorklogDetailsRequest {
@@ -175,4 +183,9 @@ export interface WorklogDetailEntry {
 
 export interface WorklogDetailsResponse {
   entries: WorklogDetailEntry[];
+  /** Issues whose worklogs could not be fetched (throttled, or erroring
+   * after retries). Non-zero means the hours here are an UNDERCOUNT and must
+   * be presented as incomplete — the alternative, which this replaced, was a
+   * silently empty report that looked like a legitimate "no work logged". */
+  failedIssueCount?: number;
 }

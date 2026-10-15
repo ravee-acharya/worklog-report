@@ -502,6 +502,171 @@ describe('saveFilterPreset', () => {
 });
 
 // ===========================================================================
+// Throttling / partial-failure handling
+//
+// A report fans out to one worklog call per issue. These used to swallow
+// every error as an empty array, so a rate-limited report rendered as a
+// legitimate-looking empty one. Now they are retried, and whatever still
+// fails is counted so the UI can say the totals are short.
+// ===========================================================================
+
+describe('worklog fetch resilience', () => {
+  const ONE_ISSUE = {
+    status: 200,
+    body: {
+      issues: [
+        {
+          key: 'PROJ-1',
+          fields: {
+            summary: 'Task A',
+            issuetype: { name: 'Task' },
+            status: { name: 'Done' },
+            project: { key: 'PROJ', name: 'Project Alpha' },
+            parent: null,
+            assignee: null,
+          },
+        },
+      ],
+    },
+  };
+
+  const WORKLOG_BODY = {
+    worklogs: [
+      {
+        id: '1',
+        author: { accountId: 'user1', displayName: 'Alice Smith' },
+        started: '2025-01-15T10:00:00.000+0000',
+        timeSpentSeconds: 3600,
+      },
+    ],
+    total: 1,
+    maxResults: 1048576,
+    startAt: 0,
+  };
+
+  it('retries a throttled worklog call and keeps the hours', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', ONE_ISSUE);
+
+    let calls = 0;
+    harness.addFixtureHandler((method, path) => {
+      if (method !== 'GET' || !path.includes('/issue/PROJ-1/worklog')) return undefined;
+      calls++;
+      return calls === 1
+        ? { status: 429, headers: { 'retry-after': '0' }, body: { message: 'Rate limit' } }
+        : { status: 200, body: WORKLOG_BODY };
+    });
+
+    const result = await harness.invoke<WorklogReportResponse>('getWorklogReport', {
+      payload: validReportPayload(),
+    });
+
+    expect(calls).toBe(2);
+    // The retry succeeded, so nothing is missing and nothing is flagged.
+    expect(result.data.failedIssueCount).toBe(0);
+    expect(result.data.rows[0].rowTotalHours).toBe(1);
+  });
+
+  it('reports an issue whose worklogs never load, instead of silently dropping it', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', ONE_ISSUE);
+
+    harness.addFixtureHandler((method, path) =>
+      method === 'GET' && path.includes('/issue/PROJ-1/worklog')
+        ? { status: 429, headers: { 'retry-after': '0' }, body: { message: 'Rate limit' } }
+        : undefined,
+    );
+
+    const result = await harness.invoke<WorklogReportResponse>('getWorklogReport', {
+      payload: validReportPayload(),
+    });
+
+    // The report still renders — one unreachable issue must not take down a
+    // report covering hundreds — but the shortfall is now visible.
+    expect(result.data.failedIssueCount).toBe(1);
+    expect(result.data.rows).toEqual([]);
+  });
+
+  it('retries a 5xx as well as a 429', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', ONE_ISSUE);
+
+    let calls = 0;
+    harness.addFixtureHandler((method, path) => {
+      if (method !== 'GET' || !path.includes('/issue/PROJ-1/worklog')) return undefined;
+      calls++;
+      return calls === 1
+        ? { status: 503, body: { message: 'Service unavailable' } }
+        : { status: 200, body: WORKLOG_BODY };
+    });
+
+    const result = await harness.invoke<WorklogReportResponse>('getWorklogReport', {
+      payload: validReportPayload(),
+    });
+
+    expect(calls).toBe(2);
+    expect(result.data.failedIssueCount).toBe(0);
+  });
+
+  // A deleted or permission-hidden issue genuinely has nothing to contribute.
+  // Counting it would cry wolf on every report that happens to span one.
+  it('does not count a 404 as a failure', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', ONE_ISSUE);
+
+    let calls = 0;
+    harness.addFixtureHandler((method, path) => {
+      if (method !== 'GET' || !path.includes('/issue/PROJ-1/worklog')) return undefined;
+      calls++;
+      return { status: 404, body: { message: 'Issue does not exist' } };
+    });
+
+    const result = await harness.invoke<WorklogReportResponse>('getWorklogReport', {
+      payload: validReportPayload(),
+    });
+
+    expect(result.data.failedIssueCount).toBe(0);
+    // And it isn't retried — a 404 will be a 404 the second time too.
+    expect(calls).toBe(1);
+  });
+
+  // 4xx other than 429 means the request itself is wrong; retrying just
+  // burns the function's 25-second budget to fail identically.
+  it('does not retry a 400', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', ONE_ISSUE);
+
+    let calls = 0;
+    harness.addFixtureHandler((method, path) => {
+      if (method !== 'GET' || !path.includes('/issue/PROJ-1/worklog')) return undefined;
+      calls++;
+      return { status: 400, body: { message: 'Bad request' } };
+    });
+
+    const result = await harness.invoke<WorklogReportResponse>('getWorklogReport', {
+      payload: validReportPayload(),
+    });
+
+    expect(calls).toBe(1);
+    expect(result.data.failedIssueCount).toBe(1);
+  });
+
+  it('surfaces the same count through the export path', async () => {
+    harness.addFixture('POST', '/rest/api/3/search/jql', ONE_ISSUE);
+
+    harness.addFixtureHandler((method, path) =>
+      method === 'GET' && path.includes('/issue/PROJ-1/worklog')
+        ? { status: 429, headers: { 'retry-after': '0' }, body: { message: 'Rate limit' } }
+        : undefined,
+    );
+
+    const result = await harness.invoke<WorklogEntriesResponse>('getWorklogEntriesPage', {
+      payload: validReportPayload(),
+    });
+
+    // An export quietly missing rows is worse than a report missing them —
+    // the file outlives the screen.
+    expect(result.data.failedIssueCount).toBe(1);
+    expect(result.data.entries).toEqual([]);
+  });
+});
+
+// ===========================================================================
 // getWorklogReport
 // ===========================================================================
 
