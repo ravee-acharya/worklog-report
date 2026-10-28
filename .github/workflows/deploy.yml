@@ -17,7 +17,21 @@ on:
 env:
   FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
   FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-  FORGE_SITE: dashtech.atlassian.net
+
+  # The development environment is installed on one site only — it exists to
+  # verify changes, not to serve anyone.
+  FORGE_DEV_SITE: dashtech.atlassian.net
+
+  # Every site the production app is installed on, space-separated.
+  #
+  # `forge deploy` publishes code to the environment and all installations
+  # pick it up, so this list is NOT needed for ordinary changes. It matters
+  # when the manifest gains a scope: each installation stays pinned to the
+  # permission set it was installed with until it is upgraded individually,
+  # and an un-upgraded site silently runs new code without the permission it
+  # expects. Add a site here as soon as it is installed, or it will be the
+  # one left behind.
+  FORGE_PROD_SITES: "dashtech.atlassian.net sportscentral.atlassian.net"
 
 jobs:
   # Validates the code the same way local development does: manifest checks,
@@ -95,9 +109,9 @@ jobs:
       - name: Install or upgrade development installation
         run: |
           forge install --upgrade --non-interactive --confirm-scopes \
-            --site "$FORGE_SITE" --product jira --environment development \
+            --site "$FORGE_DEV_SITE" --product jira --environment development \
           || forge install --non-interactive --confirm-scopes \
-            --site "$FORGE_SITE" --product jira --environment development
+            --site "$FORGE_DEV_SITE" --product jira --environment development
 
   # Production only deploys from a manual workflow run, and only after the
   # `production` GitHub Environment's required reviewers approve it. Configure
@@ -126,11 +140,35 @@ jobs:
       - name: Deploy to production
         run: forge deploy --environment production --non-interactive
 
+      # Upgrades every installed production site, not just the first.
+      #
       # Deliberately omits --confirm-scopes. A code-only change upgrades
       # silently, which is the normal case. If the manifest gained new scopes,
-      # this fails rather than auto-granting new permissions on the live site —
+      # this fails rather than auto-granting new permissions on a live site —
       # then a Jira admin grants consent deliberately (see DEPLOYMENT.md).
-      - name: Upgrade production installation
-        run: >-
-          forge install --upgrade --non-interactive
-          --site "$FORGE_SITE" --product jira --environment production
+      #
+      # Every site is attempted even after one fails, and the job fails at the
+      # end if any did. Stopping at the first failure would leave the
+      # remaining sites both un-upgraded and unreported — the silent
+      # half-migrated state this step exists to prevent.
+      - name: Upgrade production installations
+        run: |
+          failed=""
+          for site in $FORGE_PROD_SITES; do
+            echo "::group::Upgrading $site"
+            if forge install --upgrade --non-interactive \
+                 --site "$site" --product jira --environment production; then
+              echo "$site is up to date."
+            else
+              echo "::error::Upgrade failed for $site — it is still on its previous scope set."
+              failed="$failed $site"
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ -n "$failed" ]; then
+            echo "::error::Production code is deployed, but these installations were not upgraded:$failed"
+            echo "A Jira admin on each must consent to the new scopes (see DEPLOYMENT.md)."
+            exit 1
+          fi
+          echo "All production installations upgraded."
