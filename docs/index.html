@@ -1,1 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Worklog Report for Jira — Documentation | TheTechFreaks</title>
+<meta name="description" content="Getting started and user guidance for Worklog Report for Jira by TheTechFreaks.">
+<style>
+:root{color-scheme:light;--ink:#172b4d;--muted:#44546f;--blue:#0c66e4;--line:#dfe1e6;--bg:#f7f8fa;--card:#fff}
+*{box-sizing:border-box}body{margin:0;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+header{background:linear-gradient(120deg,#0747a6,#0c66e4);color:#fff;padding:48px 22px}
+.wrap{max-width:920px;margin:auto;padding:0 22px}
+.eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:.78rem;font-weight:700;opacity:.85}
+h1{font-size:clamp(2rem,5vw,3.1rem);line-height:1.15;margin:.45rem 0}
+header p{max-width:680px;font-size:1.1rem;margin:12px 0 0}
+main{padding:28px 0 56px}
+nav,.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;margin:0 0 18px}
+nav h2,.card h2{margin-top:0}
+nav ul{display:flex;flex-wrap:wrap;gap:10px 22px;padding-left:20px;margin-bottom:0}
+a{color:var(--blue)}h2{font-size:1.45rem;margin-bottom:8px}h3{font-size:1.05rem;margin-bottom:4px}
+.note{border-left:4px solid var(--blue);padding:12px 16px;background:#e9f2ff;border-radius:4px}
+footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-size:.9rem}
+code{background:#f1f2f4;padding:2px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="eyebrow">TheTechFreaks · App documentation</div>
+    <h1>Worklog Report for Jira</h1>
+    <p>Help your team review Jira worklogs, build focused reports, and export worklog data for further analysis.</p>
+  </div>
+</header>
+<main class="wrap">
+  <nav aria-label="On this page">
+    <h2>On this page</h2>
+    <ul>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#getting-started">Getting started</a></li>
+      <li><a href="#reports">Create a report</a></li>
+      <li><a href="#export">Export data</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+      <li><a href="#support">Support</a></li>
+    </ul>
+  </nav>
 
+  <section class="card" id="overview">
+    <h2>Overview</h2>
+    <p>Worklog Report is a Jira app designed to make worklog information easier to review and export. Depending on the features enabled in your installed version, you can:</p>
+    <ul>
+      <li>Export Jira worklog data to Excel or CSV.</li>
+      <li>Generate reports using available filters such as user, project, issue, and date range.</li>
+      <li>View and filter worklog entries and review available summaries.</li>
+    </ul>
+    <p class="note"><strong>Note:</strong> Available filters, report fields, and export options may vary by app version and permissions.</p>
+  </section>
+
+  <section class="card" id="getting-started">
+    <h2>Getting started</h2>
+    <ol>
+      <li>Ask your Jira administrator to install or enable Worklog Report for your Jira site, if it is not already available.</li>
+      <li>Open Jira and locate Worklog Report using the app entry point provided by your administrator or the app's current navigation.</li>
+      <li>If the app requests access or displays a permission message, check that your Jira account has the necessary access and contact your administrator if needed.</li>
+      <li>Open the reporting view and choose the filters available in your installed version.</li>
+    </ol>
+    <p>Navigation labels can differ by Jira configuration and app version. Use the entry point shown in your site.</p>
+  </section>
+
+  <section class="card" id="reports">
+    <h2>Create a worklog report</h2>
+    <ol>
+      <li>Open the Worklog Report screen in Jira.</li>
+      <li>Set the reporting period using the available date-range controls.</li>
+      <li>Apply the available user, project, or issue filters to narrow the results.</li>
+      <li>Review the worklog entries and any summaries shown by the app.</li>
+      <li>Adjust the filters if the results do not match the period or scope you need.</li>
+    </ol>
+    <p>For consistent reporting, confirm the selected date range and filters before exporting or sharing results.</p>
+  </section>
+
+  <section class="card" id="export">
+    <h2>Export worklog data</h2>
+    <p>Use the export option available in the report screen to download worklog data in Excel or CSV format, where supported by your installed version.</p>
+    <ul>
+      <li><strong>Excel:</strong> useful for spreadsheet review, calculations, and internal reporting.</li>
+      <li><strong>CSV:</strong> useful for importing data into spreadsheet tools or other systems that accept comma-separated values.</li>
+    </ul>
+    <p>Before sharing an export, review it for confidential project details and personal information, and follow your organization's data-handling policies.</p>
+  </section>
+
+  <section class="card" id="troubleshooting">
+    <h2>Troubleshooting</h2>
+    <h3>The app or report is not visible</h3>
+    <p>Confirm that the app is installed on the correct Jira site and that your account has access. Ask your Jira administrator to check the installation and permissions.</p>
+    <h3>The report is empty or incomplete</h3>
+    <p>Review the selected date range and filters. Confirm that worklogs exist for the selected scope and that your account is permitted to view the relevant Jira issues and worklogs.</p>
+    <h3>An export does not download</h3>
+    <p>Try the export again, check your browser's download settings, and confirm that the report contains results. If the issue continues, contact support with the steps to reproduce it and any non-sensitive error message.</p>
+  </section>
+
+  <section class="card" id="support">
+    <h2>Support</h2>
+    <p>For help with Worklog Report, contact the app publisher through the support contact shown on its Atlassian Marketplace listing.</p>
+    <p>When requesting help, include your Jira product, a brief description of the problem, the steps to reproduce it, and the app version if known. Do not send passwords, API tokens, or unnecessary personal or confidential data.</p>
+  </section>
+
+  <footer>
+    <div class="wrap" style="padding:0">
+      <strong>TheTechFreaks</strong> · Worklog Report for Jira documentation<br>
+      This guide is a starting point. Update it to match the exact UI, features, data handling, and support channel of the released app before publishing.
+    </div>
+  </footer>
+</main>
+</body>
+</html>
