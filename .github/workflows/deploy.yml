@@ -15,6 +15,13 @@ on:
           - production
 
 env:
+  # Pinned deliberately. This was unpinned, so CI silently moved up to
+  # @forge/cli 15.0.0 and every run began failing: 15 requires an explicit
+  # --environment for commands that used to fall back to a default
+  # development environment, and prompting for one kills a non-TTY runner.
+  # Bump this on purpose, after reading the release notes.
+  FORGE_CLI_VERSION: "15.0.0"
+
   FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
   FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
 
@@ -57,7 +64,7 @@ jobs:
 
       # forge lint (part of `npm run ci`) needs the Forge CLI, which is a
       # global install on dev machines, not a project dependency.
-      - run: npm install -g @forge/cli
+      - run: npm install -g @forge/cli@"$FORGE_CLI_VERSION"
 
       # First run of any forge command shows an interactive analytics opt-in
       # prompt, which crashes on a non-TTY CI runner ("Prompts can not be
@@ -88,7 +95,7 @@ jobs:
       # `npx forge` here: the bare name `forge` on npm is an unrelated package
       # (forge@2.3.0), so npx silently fetches the wrong tool and fails with
       # "Cannot find module 'settings'".
-      - run: npm install -g @forge/cli
+      - run: npm install -g @forge/cli@"$FORGE_CLI_VERSION"
 
       - run: forge settings set usage-analytics false
 
@@ -133,7 +140,7 @@ jobs:
 
       # See the note in deploy-development: `npx forge` resolves to the wrong
       # npm package, so install @forge/cli and call `forge` directly.
-      - run: npm install -g @forge/cli
+      - run: npm install -g @forge/cli@"$FORGE_CLI_VERSION"
 
       - run: forge settings set usage-analytics false
 

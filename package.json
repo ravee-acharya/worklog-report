@@ -15,7 +15,7 @@
     "validate:manifest": "node .manifest-rules/dist/cli.js",
     "security": "semgrep scan --config .semgrep.yml --severity ERROR --error --metrics off --quiet src",
     "security:advisory": "semgrep scan --config .semgrep.yml --metrics off --quiet src || true",
-    "ci": "npm run validate:manifest && forge lint && (npm run type-check || (echo 'HINT: If you have type errors with component props, check src/types/forge-ui-types.ts for valid prop types and values' && exit 1)) && npm run test -- --coverage && npm run lint && npm run security"
+    "ci": "npm run validate:manifest && forge lint --environment production && (npm run type-check || (echo 'HINT: If you have type errors with component props, check src/types/forge-ui-types.ts for valid prop types and values' && exit 1)) && npm run test -- --coverage && npm run lint && npm run security"
   },
   "devDependencies": {
     "@forge/testing-framework": "file:.testing-framework",
