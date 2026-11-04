@@ -502,6 +502,87 @@ describe('saveFilterPreset', () => {
 });
 
 // ===========================================================================
+// deleteFilterPreset
+// ===========================================================================
+
+describe('deleteFilterPreset', () => {
+  it('removes only the named preset', async () => {
+    await harness.invoke('saveFilterPreset', { payload: validPresetPayload({ name: 'Keep A' }) });
+    await harness.invoke('saveFilterPreset', { payload: validPresetPayload({ name: 'Drop Me' }) });
+    await harness.invoke('saveFilterPreset', { payload: validPresetPayload({ name: 'Keep B' }) });
+
+    await harness.invoke('deleteFilterPreset', { payload: { name: 'Drop Me' } });
+
+    const result = await harness.invoke<FilterPresetsResponse>('getFilterPresets', { payload: {} });
+    expect(result.data.presets.map((p) => p.name)).toEqual(['Keep A', 'Keep B']);
+  });
+
+  // saveFilterPreset overwrites case-insensitively, so delete has to match
+  // the same way — otherwise a preset save would replace is one delete can't
+  // remove.
+  it('matches the name case-insensitively, like save does', async () => {
+    await harness.invoke('saveFilterPreset', { payload: validPresetPayload({ name: 'Monthly Report' }) });
+
+    await harness.invoke('deleteFilterPreset', { payload: { name: 'monthly report' } });
+
+    const result = await harness.invoke<FilterPresetsResponse>('getFilterPresets', { payload: {} });
+    expect(result.data.presets).toEqual([]);
+  });
+
+  // A stale dropdown or a double click asks to delete something already
+  // gone. The caller's desired state is "not there", which it already is.
+  it('succeeds when the preset is already gone', async () => {
+    await harness.invoke('saveFilterPreset', { payload: validPresetPayload({ name: 'Only One' }) });
+
+    const result = await harness.invoke<SaveFilterResponse>('deleteFilterPreset', {
+      payload: { name: 'Never Existed' },
+    });
+
+    expect(result.data.success).toBe(true);
+    const after = await harness.invoke<FilterPresetsResponse>('getFilterPresets', { payload: {} });
+    expect(after.data.presets.map((p) => p.name)).toEqual(['Only One']);
+  });
+
+  it('rejects a missing or blank name rather than deleting something arbitrary', async () => {
+    await expect(harness.invoke('deleteFilterPreset', { payload: {} })).rejects.toThrow();
+    await expect(harness.invoke('deleteFilterPreset', { payload: { name: '   ' } })).rejects.toThrow();
+  });
+
+  it('is a no-op when the user has no presets at all', async () => {
+    const result = await harness.invoke<SaveFilterResponse>('deleteFilterPreset', {
+      payload: { name: 'Anything' },
+    });
+    expect(result.data.success).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Preset rolling date ranges
+// ===========================================================================
+
+describe('saveFilterPreset dateMode', () => {
+  it('round-trips the dateMode through storage', async () => {
+    await harness.invoke('saveFilterPreset', {
+      payload: validPresetPayload({ name: 'Rolling', dateMode: 'monthToDate' }),
+    });
+
+    const result = await harness.invoke<FilterPresetsResponse>('getFilterPresets', { payload: {} });
+    expect(result.data.presets[0].dateMode).toBe('monthToDate');
+  });
+
+  // Presets saved before rolling ranges existed have no dateMode. They must
+  // keep loading as the fixed ranges they already were, not break.
+  it('still accepts a preset with no dateMode', async () => {
+    const payload = validPresetPayload({ name: 'Legacy' });
+    await harness.invoke('saveFilterPreset', { payload });
+
+    const result = await harness.invoke<FilterPresetsResponse>('getFilterPresets', { payload: {} });
+    expect(result.data.presets[0].dateMode).toBeUndefined();
+    expect(result.data.presets[0].startDate).toBe(payload.startDate);
+  });
+});
+
+// ===========================================================================
 // Throttling / partial-failure handling
 //
 // A report fans out to one worklog call per issue. These used to swallow

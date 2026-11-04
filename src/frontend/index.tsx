@@ -33,6 +33,7 @@ import type {
   WorklogPivotRow,
   FilterOptions,
   FilterPreset,
+  PresetDateMode,
   FilterPresetsResponse,
   SaveFilterResponse,
   UserPreferences,
@@ -857,6 +858,132 @@ function getTodayDate(): string {
   return `${y}-${m}-${d}`;
 }
 
+// ---------------------------------------------------------------------------
+// Rolling preset date ranges
+//
+// A preset used to store only its literal From/To dates, so one saved in
+// November still reported November in December — the saved filter went stale
+// the moment the month turned. A preset now also stores *how* its range
+// should be derived, and anything other than 'fixed' is recomputed from
+// today each time it loads.
+//
+// All arithmetic below is pure string/UTC math on a YYYY-MM-DD `today` that
+// the caller takes from the local calendar (getTodayDate). Keeping the local
+// clock out of the maths means no timezone can shift a boundary by a day —
+// the same trap formatLoggedDate avoids.
+// ---------------------------------------------------------------------------
+
+const PRESET_DATE_MODE_OPTIONS: SelectOption[] = [
+  { label: 'Fixed dates', value: 'fixed' },
+  { label: 'Month to date', value: 'monthToDate' },
+  { label: 'Last month', value: 'lastMonth' },
+  { label: 'Week to date', value: 'weekToDate' },
+  { label: 'Last week', value: 'lastWeek' },
+  { label: 'Last 7 days', value: 'last7Days' },
+  { label: 'Last 30 days', value: 'last30Days' },
+  { label: 'Year to date', value: 'yearToDate' },
+];
+
+/** Every mode except 'fixed', in the order inferPresetDateMode tries them. */
+const ROLLING_DATE_MODES: PresetDateMode[] = [
+  'monthToDate',
+  'lastMonth',
+  'weekToDate',
+  'lastWeek',
+  'last7Days',
+  'last30Days',
+  'yearToDate',
+];
+
+function toUtcDate(date: string): Date {
+  return new Date(`${date}T00:00:00Z`);
+}
+
+function toDateString(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function addDays(date: string, days: number): string {
+  const d = toUtcDate(date);
+  d.setUTCDate(d.getUTCDate() + days);
+  return toDateString(d);
+}
+
+/** Monday of the ISO week containing `date` — matches the week bucketing the
+ * report itself uses (see the resolver's getISOWeekStart). */
+function mondayOf(date: string): string {
+  const d = toUtcDate(date);
+  // getUTCDay is 0=Sun..6=Sat; shift so Monday is 0.
+  const offset = (d.getUTCDay() + 6) % 7;
+  return addDays(date, -offset);
+}
+
+/**
+ * The actual From/To a preset's date mode means today.
+ *
+ * "to date" modes deliberately end on today rather than the end of the
+ * period: a month-to-date report that ran to the 30th would pad every
+ * remaining day of the month with empty columns.
+ */
+export function resolvePresetDateRange(
+  mode: PresetDateMode,
+  today: string,
+): { startDate: string; endDate: string } {
+  const d = toUtcDate(today);
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth();
+
+  switch (mode) {
+    case 'monthToDate':
+      return { startDate: toDateString(new Date(Date.UTC(year, month, 1))), endDate: today };
+    case 'lastMonth':
+      return {
+        startDate: toDateString(new Date(Date.UTC(year, month - 1, 1))),
+        // Day 0 of this month is the last day of the previous one.
+        endDate: toDateString(new Date(Date.UTC(year, month, 0))),
+      };
+    case 'weekToDate':
+      return { startDate: mondayOf(today), endDate: today };
+    case 'lastWeek': {
+      const start = addDays(mondayOf(today), -7);
+      return { startDate: start, endDate: addDays(start, 6) };
+    }
+    case 'last7Days':
+      return { startDate: addDays(today, -6), endDate: today };
+    case 'last30Days':
+      return { startDate: addDays(today, -29), endDate: today };
+    case 'yearToDate':
+      return { startDate: toDateString(new Date(Date.UTC(year, 0, 1))), endDate: today };
+    case 'fixed':
+    default:
+      // Callers must not use this — 'fixed' means "replay what was saved",
+      // which only the preset itself knows. Returning today keeps the
+      // function total rather than throwing into a render path.
+      return { startDate: today, endDate: today };
+  }
+}
+
+/**
+ * The rolling mode the currently-selected dates happen to describe, or
+ * 'fixed' if they describe none of them.
+ *
+ * Used to preselect the Save dialog's choice, so saving the default 1st-to-
+ * today range offers "Month to date" rather than quietly freezing it — which
+ * is the behaviour that made saved filters go stale in the first place. It
+ * only ever preselects: the dropdown is right there to override.
+ */
+export function inferPresetDateMode(
+  startDate: string,
+  endDate: string,
+  today: string,
+): PresetDateMode {
+  for (const mode of ROLLING_DATE_MODES) {
+    const range = resolvePresetDateRange(mode, today);
+    if (range.startDate === startDate && range.endDate === endDate) return mode;
+  }
+  return 'fixed';
+}
+
 function formatHours(hours: number, unit: string): string {
   if (unit === 'hoursMinutes') {
     const h = Math.floor(hours);
@@ -1452,6 +1579,11 @@ export const App = (): JSX.Element => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [savingPreset, setSavingPreset] = useState(false);
+  // How the preset being saved should resolve its dates. Preselected from
+  // the current From/To when the dialog opens — see openSaveModal.
+  const [presetDateMode, setPresetDateMode] = useState<SelectOption>(PRESET_DATE_MODE_OPTIONS[0]);
+  const [deletingPreset, setDeletingPreset] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Batched loading progress state — just a running count. Jira's search API
   // doesn't return a reliable total for these JQL queries (it's an estimate
@@ -1862,8 +1994,16 @@ export const App = (): JSX.Element => {
       // Projects/Users selections.
       setJqlFilter(preset.jql ?? '');
 
-      setStartDate(preset.startDate);
-      setEndDate(preset.endDate);
+      // A rolling preset recomputes its range against today; 'fixed' (and any
+      // preset saved before dateMode existed) replays exactly what was saved.
+      if (preset.dateMode && preset.dateMode !== 'fixed') {
+        const range = resolvePresetDateRange(preset.dateMode, getTodayDate());
+        setStartDate(range.startDate);
+        setEndDate(range.endDate);
+      } else {
+        setStartDate(preset.startDate);
+        setEndDate(preset.endDate);
+      }
       // A preset counts as the user choosing a Period, so it becomes the
       // remembered one too — otherwise loading a preset and reloading the
       // page would silently snap Period back to whatever was stored before.
@@ -1887,6 +2027,51 @@ export const App = (): JSX.Element => {
   // ------------------------------------------------------------------
   // Save preset
   // ------------------------------------------------------------------
+  /**
+   * Delete the currently-selected preset. Confirmed first (see the delete
+   * modal) because presets are not versioned and there is no undo — the only
+   * recovery is to rebuild the filters by hand and save again.
+   */
+  const handleDeletePreset = useCallback(async () => {
+    const name = selectedPreset?.value;
+    if (!name) return;
+    setDeletingPreset(true);
+    try {
+      if (isAppBuilderPreview) {
+        setPresets((prev) => prev.filter((p) => p.name !== name));
+      } else {
+        await invoke<SaveFilterResponse>('deleteFilterPreset', { name });
+        const resp = await invoke<FilterPresetsResponse>('getFilterPresets');
+        setPresets(Array.isArray(resp?.presets) ? resp.presets : []);
+      }
+      // Clear the selection: leaving a deleted preset's name in the dropdown
+      // would offer to load something that no longer exists.
+      setSelectedPreset(null);
+      setIsDeleteModalOpen(false);
+    } catch (err) {
+      console.error('Failed to delete preset:', err);
+      logError({ message: 'Failed to delete filter preset', stack: String(err) });
+      setError('Failed to delete the filter preset. Please try again.');
+      setIsDeleteModalOpen(false);
+    } finally {
+      setDeletingPreset(false);
+    }
+  }, [selectedPreset]);
+
+  /**
+   * Open the Save dialog, preselecting the rolling mode the current dates
+   * already describe. Saving the default 1st-to-today range therefore offers
+   * "Month to date" rather than silently freezing it — the stale-preset bug
+   * was precisely that freezing being the only option.
+   */
+  const openSaveModal = useCallback(() => {
+    const inferred = inferPresetDateMode(startDate, endDate, getTodayDate());
+    setPresetDateMode(
+      PRESET_DATE_MODE_OPTIONS.find((o) => o.value === inferred) ?? PRESET_DATE_MODE_OPTIONS[0],
+    );
+    setIsModalOpen(true);
+  }, [startDate, endDate]);
+
   const handleSavePreset = useCallback(async () => {
     if (!presetName.trim()) return;
     setSavingPreset(true);
@@ -1897,6 +2082,7 @@ export const App = (): JSX.Element => {
         userAccountIds: selectedUsers.map((u) => u.value),
         startDate,
         endDate,
+        dateMode: presetDateMode.value as PresetDateMode,
         period: period.value as FilterPreset['period'],
         categorize: categorize?.value,
         groupBy: groupBy?.value,
@@ -1926,7 +2112,7 @@ export const App = (): JSX.Element => {
     } finally {
       setSavingPreset(false);
     }
-  }, [presetName, selectedProjects, selectedUsers, startDate, endDate, period, categorize, groupBy, secondGroup, timeUnit, jqlFilter]);
+  }, [presetName, presetDateMode, selectedProjects, selectedUsers, startDate, endDate, period, categorize, groupBy, secondGroup, timeUnit, jqlFilter]);
 
   // ------------------------------------------------------------------
   // Worklog detail drill-down
@@ -2635,8 +2821,23 @@ export const App = (): JSX.Element => {
               <Box>
                 <Stack space="space.050">
                   <Text>&nbsp;</Text>
-                  <Button appearance="subtle" onClick={() => setIsModalOpen(true)}>
+                  <Button appearance="subtle" onClick={openSaveModal}>
                     Save Filter
+                  </Button>
+                </Stack>
+              </Box>
+
+              {/* Delete Filter — only offered when a preset is actually
+                  selected, since it acts on that selection. */}
+              <Box>
+                <Stack space="space.050">
+                  <Text>&nbsp;</Text>
+                  <Button
+                    appearance="subtle"
+                    onClick={() => setIsDeleteModalOpen(true)}
+                    isDisabled={!selectedPreset}
+                  >
+                    Delete Filter
                   </Button>
                 </Stack>
               </Box>
@@ -2805,6 +3006,30 @@ export const App = (): JSX.Element => {
                   value={presetName}
                   onChange={(e) => setPresetName(String(e.target.value ?? ''))}
                 />
+
+                {/* The fix for stale presets: a preset stores how to derive
+                    its dates, not only what they were on the day it was
+                    saved. */}
+                <Label labelFor="preset-date-mode">Date range</Label>
+                <Select
+                  id="preset-date-mode"
+                  options={PRESET_DATE_MODE_OPTIONS}
+                  value={presetDateMode}
+                  onChange={(val: unknown) => {
+                    if (val) setPresetDateMode(val as SelectOption);
+                  }}
+                />
+                <Text size="small">
+                  {presetDateMode.value === 'fixed'
+                    ? `Always reports ${formatLoggedDate(startDate)} to ${formatLoggedDate(endDate)}.`
+                    : (() => {
+                      const r = resolvePresetDateRange(
+                        presetDateMode.value as PresetDateMode,
+                        getTodayDate(),
+                      );
+                      return `Recalculated each time it's opened — today that means ${formatLoggedDate(r.startDate)} to ${formatLoggedDate(r.endDate)}.`;
+                    })()}
+                </Text>
               </Stack>
             </ModalBody>
             <ModalFooter>
@@ -2818,6 +3043,37 @@ export const App = (): JSX.Element => {
                   isDisabled={!presetName.trim() || savingPreset}
                 >
                   {savingPreset ? 'Saving...' : 'Save'}
+                </Button>
+              </ButtonGroup>
+            </ModalFooter>
+          </Modal>
+        )}
+      </ModalTransition>
+
+      {/* Delete Filter Preset confirmation — presets aren't versioned and
+          there's no undo, so this asks before destroying one. */}
+      <ModalTransition>
+        {isDeleteModalOpen && (
+          <Modal onClose={() => setIsDeleteModalOpen(false)}>
+            <ModalHeader>
+              <ModalTitle appearance="danger">Delete filter preset</ModalTitle>
+            </ModalHeader>
+            <ModalBody>
+              <Text>
+                {`Delete "${selectedPreset?.value ?? ''}"? This can't be undone — the preset would have to be rebuilt and saved again.`}
+              </Text>
+            </ModalBody>
+            <ModalFooter>
+              <ButtonGroup>
+                <Button appearance="subtle" onClick={() => setIsDeleteModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  appearance="danger"
+                  onClick={handleDeletePreset}
+                  isDisabled={deletingPreset}
+                >
+                  {deletingPreset ? 'Deleting...' : 'Delete'}
                 </Button>
               </ButtonGroup>
             </ModalFooter>

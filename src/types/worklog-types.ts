@@ -72,12 +72,36 @@ export interface FilterOptions {
   issueTypes: string[];
 }
 
+/**
+ * How a preset's date range is resolved when it is loaded.
+ *
+ * `fixed` replays the exact startDate/endDate that were saved — right for a
+ * one-off range like a closed quarter's audit. Every other value is a rule
+ * recomputed against today, so a preset saved in November reports December
+ * when it's opened in December instead of silently replaying November.
+ */
+export type PresetDateMode =
+  | 'fixed'
+  | 'monthToDate'
+  | 'lastMonth'
+  | 'weekToDate'
+  | 'lastWeek'
+  | 'last7Days'
+  | 'last30Days'
+  | 'yearToDate';
+
 export interface FilterPreset {
   name: string;
   projectKeys: string[];
   userAccountIds?: string[];
+  /** The range as saved. Still stored for every preset — it is what `fixed`
+   * replays, and what a rolling preset falls back to if its mode is ever
+   * unrecognised. */
   startDate: string;
   endDate: string;
+  /** Absent on presets saved before rolling ranges existed; those are
+   * treated as 'fixed', which is exactly how they already behaved. */
+  dateMode?: PresetDateMode;
   period: 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
   categorize?: string;
   groupBy?: string;

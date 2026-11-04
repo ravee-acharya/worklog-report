@@ -1643,6 +1643,46 @@ resolver.define(
 );
 
 // ---------------------------------------------------------------------------
+// deleteFilterPreset resolver
+// ---------------------------------------------------------------------------
+
+resolver.define(
+  'deleteFilterPreset',
+  async (req: ResolverRequest): Promise<SaveFilterResponse> => {
+    const accountId = req.context?.accountId;
+    if (!accountId) {
+      throw new Error('No accountId in context');
+    }
+
+    const payload = req.payload as { name?: string } | undefined;
+    const name = payload?.name?.trim();
+    if (!name) {
+      throw new Error('Preset name is required');
+    }
+
+    // Keyed by accountId, so a user can only ever delete their own presets —
+    // there is no shared preset store to reach into.
+    const storageKey = `filter-presets:${accountId}`;
+    const stored = await kvs.get(storageKey);
+    const presets: FilterPreset[] = Array.isArray(stored) ? (stored as FilterPreset[]) : [];
+
+    // Case-insensitive to match saveFilterPreset's overwrite rule, so a
+    // preset that save would have replaced is one delete can remove.
+    const remaining = presets.filter((p) => p.name.toLowerCase() !== name.toLowerCase());
+
+    if (remaining.length === presets.length) {
+      // Already gone (a stale dropdown, or a double click). Deleting nothing
+      // is the state the caller wanted, so this is not an error.
+      return { success: true, name };
+    }
+
+    await kvs.set(storageKey, remaining);
+
+    return { success: true, name };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // getWorklogReport resolver
 // ---------------------------------------------------------------------------
 
