@@ -1617,6 +1617,18 @@ export const App = (): JSX.Element => {
   // Caches the failed count alongside the entries: a cache hit must reproduce
   // the same incomplete-data warning, or reopening the popup would quietly
   // present the undercount as complete.
+  /**
+   * Monotonic ticket for the Users-dropdown cascade.
+   *
+   * Picking a second project fires a second getFilterOptions while the first
+   * is still in flight, and the responses can land in either order. When the
+   * single-project response arrived last it overwrote the two-project one, so
+   * the dropdown showed only the first project's members — the reported bug.
+   * Each request takes a ticket and discards its own result if a newer
+   * request has started since.
+   */
+  const userCascadeSeqRef = useRef(0);
+
   const detailCacheRef = useRef<Map<string, { entries: WorklogDetailEntry[]; failedCount: number }>>(
     new Map(),
   );
@@ -1962,10 +1974,15 @@ export const App = (): JSX.Element => {
       // rather than whatever project scope was active before loading it.
       let usersSource = filterOptions.users;
       if (!isAppBuilderPreview) {
+        // Shares the cascade ticket with the Projects dropdown: loading a
+        // preset while a project-change request is still in flight is the
+        // same race, and whichever the user triggered last must win.
+        const seq = ++userCascadeSeqRef.current;
         try {
           const newOpts = await invoke<FilterOptions>('getFilterOptions', {
             projectKeys: preset.projectKeys,
           });
+          if (seq !== userCascadeSeqRef.current) return;
           if (newOpts) {
             usersSource = newOpts.users;
             setFilterOptions((prev) => (prev ? { ...prev, users: newOpts.users } : prev));
@@ -2645,9 +2662,13 @@ export const App = (): JSX.Element => {
                       setSelectedProjects(opts);
                       // Cascade: re-fetch users scoped to selected projects
                       if (!isAppBuilderPreview) {
+                        const seq = ++userCascadeSeqRef.current;
                         try {
                           const projectKeys = opts.map((o) => o.value);
                           const newOpts = await invoke<FilterOptions>('getFilterOptions', { projectKeys });
+                          // Drop a response the user has already superseded by
+                          // changing the selection again — see userCascadeSeqRef.
+                          if (seq !== userCascadeSeqRef.current) return;
                           if (newOpts) {
                             setFilterOptions((prev) => prev ? { ...prev, users: newOpts.users } : prev);
                             // Remove any selected users no longer in the refreshed list

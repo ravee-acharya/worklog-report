@@ -211,6 +211,48 @@ async function fetchAllUsers(): Promise<Array<{ accountId: string; displayName: 
 // Helper: Fetch users scoped to projects (cascading filter)
 // ---------------------------------------------------------------------------
 
+/**
+ * Every user assignable in ONE project, following pagination.
+ *
+ * Deliberately one project per call — see fetchUsersByProjectKeys for why the
+ * multi-key form of this endpoint is not used.
+ */
+async function fetchAssignableUsersForProject(
+  projectKey: string,
+): Promise<Array<{ accountId: string; displayName: string }>> {
+  const users: Array<{ accountId: string; displayName: string }> = [];
+  let startAt = 0;
+  const maxResults = 50;
+
+  while (true) {
+    const response = await api
+      .asUser()
+      .requestJira(
+        route`/rest/api/3/user/assignable/multiProjectSearch?projectKeys=${projectKey}&startAt=${startAt}&maxResults=${maxResults}`,
+      );
+
+    const data = await safeJsonResponse<
+      Array<{ accountId: string; displayName: string; accountType?: string; active?: boolean }>
+    >(response);
+    const list = Array.isArray(data) ? data : [];
+
+    for (const u of list) {
+      if (!u.accountId) continue;
+      if (u.accountType && u.accountType !== 'atlassian') continue;
+      if (u.active === false) continue;
+      if (!u.displayName || !u.displayName.trim()) continue;
+      users.push({ accountId: u.accountId, displayName: u.displayName });
+    }
+
+    if (list.length < maxResults) {
+      break;
+    }
+    startAt += list.length;
+  }
+
+  return users;
+}
+
 async function fetchUsersByProjectKeys(
   projectKeys: string[],
 ): Promise<Array<{ accountId: string; displayName: string }>> {
@@ -225,37 +267,46 @@ async function fetchUsersByProjectKeys(
   // approximation — assignable rather than strictly has-logged-work-here —
   // acceptable for a filter dropdown, since it doesn't affect the report's
   // actual computed numbers).
-  const users: Array<{ accountId: string; displayName: string }> = [];
+  //
+  // One request PER PROJECT, unioned here, rather than one request carrying
+  // every key. Passing all the keys at once looks like the obvious choice and
+  // is what this did, but that endpoint's contract is "users who can be
+  // assigned issues in one or more projects" — Atlassian does not define it
+  // as a union, it is reported to return too few users, and to return nothing
+  // at all when the chosen projects are not all the same type (company- vs
+  // team-managed). Selecting a second project could therefore shrink the
+  // dropdown rather than grow it. Asking per project and merging makes the
+  // union explicit, at the cost of a few extra calls on a dropdown that is
+  // only rebuilt when the selection changes.
+  const BATCH_SIZE = 5;
+  const collected: Array<Array<{ accountId: string; displayName: string }>> = [];
+
+  for (let i = 0; i < projectKeys.length; i += BATCH_SIZE) {
+    const batch = projectKeys.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (key) => {
+        try {
+          return await fetchAssignableUsersForProject(key);
+        } catch (err) {
+          // One unreadable project (deleted, or no browse permission) must
+          // not empty the whole dropdown — the other projects' members are
+          // still perfectly valid choices.
+          console.warn(`Failed to fetch assignable users for ${key}:`, err);
+          return [];
+        }
+      }),
+    );
+    collected.push(...results);
+  }
+
   const seen = new Set<string>();
-  const projectKeysParam = projectKeys.join(',');
-  let startAt = 0;
-  const maxResults = 50;
-
-  while (true) {
-    const response = await api
-      .asUser()
-      .requestJira(
-        route`/rest/api/3/user/assignable/multiProjectSearch?projectKeys=${projectKeysParam}&startAt=${startAt}&maxResults=${maxResults}`,
-      );
-
-    const data = await safeJsonResponse<
-      Array<{ accountId: string; displayName: string; accountType?: string; active?: boolean }>
-    >(response);
-    const list = Array.isArray(data) ? data : [];
-
+  const users: Array<{ accountId: string; displayName: string }> = [];
+  for (const list of collected) {
     for (const u of list) {
-      if (!u.accountId || seen.has(u.accountId)) continue;
-      if (u.accountType && u.accountType !== 'atlassian') continue;
-      if (u.active === false) continue;
-      if (!u.displayName || !u.displayName.trim()) continue;
+      if (seen.has(u.accountId)) continue;
       seen.add(u.accountId);
-      users.push({ accountId: u.accountId, displayName: u.displayName });
+      users.push(u);
     }
-
-    if (list.length < maxResults) {
-      break;
-    }
-    startAt += list.length;
   }
 
   users.sort((a, b) => a.displayName.localeCompare(b.displayName));

@@ -321,6 +321,117 @@ describe('getFilterOptions', () => {
       expect(result.data.users[0].displayName).toBe('Alice Smith');
     });
   });
+
+  // Selecting a second project must GROW the member list, not replace it.
+  // These drive a per-project handler so a request carrying several keys at
+  // once would visibly fail: the union can only be produced by asking for
+  // each project separately.
+  describe('with several projectKeys', () => {
+    /** Distinct membership per project, plus one person on both. */
+    function addPerProjectUserFixture(seen?: string[]) {
+      const byProject: Record<string, Array<Record<string, unknown>>> = {
+        ECE: [
+          { accountId: 'u-amy', displayName: 'Amy Patel', accountType: 'atlassian', active: true },
+          { accountId: 'u-shared', displayName: 'Shared Person', accountType: 'atlassian', active: true },
+        ],
+        RIT: [
+          { accountId: 'u-zed', displayName: 'Zed Brown', accountType: 'atlassian', active: true },
+          { accountId: 'u-shared', displayName: 'Shared Person', accountType: 'atlassian', active: true },
+        ],
+      };
+
+      harness.addFixtureHandler((method, path) => {
+        if (method !== 'GET' || !path.includes('/user/assignable/multiProjectSearch')) return undefined;
+        const key = (path.match(/projectKeys=([^&]+)/) || [])[1] ?? '';
+        seen?.push(decodeURIComponent(key));
+        return { status: 200, body: byProject[decodeURIComponent(key)] ?? [] };
+      });
+    }
+
+    it('returns the union of both projects members, not just the first', async () => {
+      addProjectFixture([]);
+      addEpicFixture([]);
+      addIssueTypeFixture([]);
+      addPerProjectUserFixture();
+
+      const result = await harness.invoke<FilterOptions>('getFilterOptions', {
+        payload: { projectKeys: ['ECE', 'RIT'] },
+      });
+
+      expect(result.data.users.map((u) => u.displayName)).toEqual([
+        'Amy Patel',
+        'Shared Person',
+        'Zed Brown',
+      ]);
+    });
+
+    it('asks for each project separately', async () => {
+      addProjectFixture([]);
+      addEpicFixture([]);
+      addIssueTypeFixture([]);
+      const seen: string[] = [];
+      addPerProjectUserFixture(seen);
+
+      await harness.invoke<FilterOptions>('getFilterOptions', {
+        payload: { projectKeys: ['ECE', 'RIT'] },
+      });
+
+      // Never 'ECE,RIT' in one call — that form is what returned too few
+      // users (and nothing at all across mixed project types).
+      expect(seen.sort()).toEqual(['ECE', 'RIT']);
+    });
+
+    it('lists someone on both projects once', async () => {
+      addProjectFixture([]);
+      addEpicFixture([]);
+      addIssueTypeFixture([]);
+      addPerProjectUserFixture();
+
+      const result = await harness.invoke<FilterOptions>('getFilterOptions', {
+        payload: { projectKeys: ['ECE', 'RIT'] },
+      });
+
+      expect(result.data.users.filter((u) => u.accountId === 'u-shared')).toHaveLength(1);
+    });
+
+    // One project the user can't browse shouldn't blank the whole dropdown —
+    // the other project's members are still valid choices.
+    it('keeps the readable projects members when one project errors', async () => {
+      addProjectFixture([]);
+      addEpicFixture([]);
+      addIssueTypeFixture([]);
+      harness.addFixtureHandler((method, path) => {
+        if (method !== 'GET' || !path.includes('/user/assignable/multiProjectSearch')) return undefined;
+        const key = decodeURIComponent((path.match(/projectKeys=([^&]+)/) || [])[1] ?? '');
+        if (key === 'SECRET') return { status: 403, body: { message: 'No permission' } };
+        return {
+          status: 200,
+          body: [{ accountId: 'u-amy', displayName: 'Amy Patel', accountType: 'atlassian', active: true }],
+        };
+      });
+
+      const result = await harness.invoke<FilterOptions>('getFilterOptions', {
+        payload: { projectKeys: ['ECE', 'SECRET'] },
+      });
+
+      expect(result.data.users.map((u) => u.displayName)).toEqual(['Amy Patel']);
+    });
+
+    it('sorts the merged list by display name', async () => {
+      addProjectFixture([]);
+      addEpicFixture([]);
+      addIssueTypeFixture([]);
+      addPerProjectUserFixture();
+
+      const result = await harness.invoke<FilterOptions>('getFilterOptions', {
+        payload: { projectKeys: ['RIT', 'ECE'] },
+      });
+
+      // Zed comes from the first-requested project but must still sort last.
+      const names = result.data.users.map((u) => u.displayName);
+      expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+    });
+  });
 });
 
 // ===========================================================================
