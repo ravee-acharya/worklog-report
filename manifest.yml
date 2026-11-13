@@ -17,6 +17,12 @@ resources:
 app:
   runtime:
     name: nodejs22.x
+  # Required before the app can be sold on the Marketplace: a Forge app
+  # without this cannot be given a paid payment model, and its license is
+  # undefined at runtime. Note this is also what makes EXISTING installs
+  # count as unlicensed until their site admin subscribes.
+  licensing:
+    enabled: true
   id: ari:cloud:ecosystem::app/ad045ff2-dddf-4d5c-9394-1e4bd6e30750
 permissions:
   scopes:
