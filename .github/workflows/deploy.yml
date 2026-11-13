@@ -13,6 +13,11 @@ on:
         options:
           - development
           - production
+      approve_major_version:
+        description: "Approve a MAJOR version upgrade. Existing installs will NOT auto-update - each site admin must upgrade by hand. Leave off unless you intend this."
+        required: false
+        default: false
+        type: boolean
 
 env:
   # Pinned deliberately. This was unpinned, so CI silently moved up to
@@ -144,8 +149,19 @@ jobs:
 
       - run: forge settings set usage-analytics false
 
+      # A manifest change that forces a major version (adding licensing, for
+      # one) is never approved implicitly: existing installations stop
+      # auto-updating and every site admin has to upgrade by hand. That has
+      # to be a conscious choice made at dispatch time, not a flag quietly
+      # living in the repo approving every future major change too.
       - name: Deploy to production
-        run: forge deploy --environment production --non-interactive
+        run: |
+          if [ "${{ inputs.approve_major_version }}" = "true" ]; then
+            echo "::warning::Approving MAJOR_VERSION_RULE - existing installs will not auto-update until each site admin upgrades."
+            forge deploy --environment production --non-interactive --approve MAJOR_VERSION_RULE
+          else
+            forge deploy --environment production --non-interactive
+          fi
 
       # Upgrades every installed production site, not just the first.
       #
