@@ -34,16 +34,14 @@ env:
   # verify changes, not to serve anyone.
   FORGE_DEV_SITE: dashtech.atlassian.net
 
-  # Every site the production app is installed on, space-separated.
-  #
-  # `forge deploy` publishes code to the environment and all installations
-  # pick it up, so this list is NOT needed for ordinary changes. It matters
-  # when the manifest gains a scope: each installation stays pinned to the
-  # permission set it was installed with until it is upgraded individually,
-  # and an un-upgraded site silently runs new code without the permission it
-  # expects. Add a site here as soon as it is installed, or it will be the
-  # one left behind.
-  FORGE_PROD_SITES: "dashtech.atlassian.net sportscentral.atlassian.net"
+  # Deliberately empty. This listed the sites we installed the app on back
+  # when it was private and we managed those installs ourselves. It is now a
+  # licensed Marketplace app: customers install and upgrade it through
+  # Atlassian, the CLI is not permitted to upgrade a licensed install, and
+  # our own sites have been uninstalled in favour of the internal clone.
+  # Leave it empty unless there is genuinely a site whose installation this
+  # pipeline owns; the upgrade loop below then simply does nothing.
+  FORGE_PROD_SITES: ""
 
   # The internal, unlicensed clone of the app: same code, different Forge
   # app id, licensing stripped (see scripts/make-internal-manifest.js). It
@@ -193,6 +191,11 @@ jobs:
 
             if [ "$ok" = "1" ]; then
               echo "$site is up to date."
+            elif echo "$out" | grep -qi "Could not find an installation"; then
+              # The site simply does not have the app installed. That means
+              # FORGE_PROD_SITES is stale, not that the deploy went wrong.
+              echo "::warning::$site has no installation of this app - remove it from FORGE_PROD_SITES if that is expected."
+              licensed="$licensed $site"
             elif echo "$out" | grep -qi "Upgrading to a licensed app is not permitted"; then
               # Expected, not a fault. Atlassian does not let the CLI convert an
               # existing free installation into a licensed one — the site admin
