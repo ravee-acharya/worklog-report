@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Worklog Report for Jira — Documentation | TheTechFreaks</title>
-<meta name="description" content="Getting started and user guidance for Worklog Report for Jira by TheTechFreaks.">
+<meta name="description" content="User guide for Worklog Report for Jira by TheTechFreaks: build pivoted worklog reports, drill into individual worklogs, save filters, and export to CSV.">
 <style>
 :root{color-scheme:light;--ink:#172b4d;--muted:#44546f;--blue:#0c66e4;--line:#dfe1e6;--bg:#f7f8fa;--card:#fff}
 *{box-sizing:border-box}body{margin:0;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg)}
@@ -21,6 +21,10 @@ a{color:var(--blue)}h2{font-size:1.45rem;margin-bottom:8px}h3{font-size:1.05rem;
 .note{border-left:4px solid var(--blue);padding:12px 16px;background:#e9f2ff;border-radius:4px}
 footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-size:.9rem}
 code{background:#f1f2f4;padding:2px 5px;border-radius:4px}
+table{width:100%;border-collapse:collapse;margin:12px 0}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;background:#fafbfc}
+.tablewrap{overflow-x:auto}
 </style>
 </head>
 <body>
@@ -28,7 +32,7 @@ code{background:#f1f2f4;padding:2px 5px;border-radius:4px}
   <div class="wrap">
     <div class="eyebrow">TheTechFreaks · App documentation</div>
     <h1>Worklog Report for Jira</h1>
-    <p>Help your team review Jira worklogs, build focused reports, and export worklog data for further analysis.</p>
+    <p>Pivot Jira worklogs by person, project or issue over any date range, drill into the individual entries behind any number, and export the detail — including worklog comments — to CSV.</p>
   </div>
 </header>
 <main class="wrap">
@@ -37,8 +41,11 @@ code{background:#f1f2f4;padding:2px 5px;border-radius:4px}
     <ul>
       <li><a href="#overview">Overview</a></li>
       <li><a href="#getting-started">Getting started</a></li>
-      <li><a href="#reports">Create a report</a></li>
-      <li><a href="#export">Export data</a></li>
+      <li><a href="#reports">Build a report</a></li>
+      <li><a href="#details">Worklog details</a></li>
+      <li><a href="#presets">Saved filters</a></li>
+      <li><a href="#export">Exports</a></li>
+      <li><a href="#permissions">Permissions &amp; data</a></li>
       <li><a href="#troubleshooting">Troubleshooting</a></li>
       <li><a href="#support">Support</a></li>
     </ul>
@@ -46,68 +53,152 @@ code{background:#f1f2f4;padding:2px 5px;border-radius:4px}
 
   <section class="card" id="overview">
     <h2>Overview</h2>
-    <p>Worklog Report is a Jira app designed to make worklog information easier to review and export. Depending on the features enabled in your installed version, you can:</p>
+    <p>Worklog Report turns Jira worklogs into a pivot table: one row per person (or project, issue type or issue) and one column per day, week or month. Every number is clickable, so you can always see the individual worklogs behind a total.</p>
     <ul>
-      <li>Export Jira worklog data to Excel or CSV.</li>
-      <li>Generate reports using available filters such as user, project, issue, and date range.</li>
-      <li>View and filter worklog entries and review available summaries.</li>
+      <li><strong>Pivot by period</strong> — day, week or month columns across any From/To range.</li>
+      <li><strong>Group up to three levels</strong> — Categorize, Group by and 2nd Group, across User, Project, Issue Type and Issues.</li>
+      <li><strong>Drill down anywhere</strong> — click a cell, a row total or the grand total row to list the worklogs behind it.</li>
+      <li><strong>See the comments</strong> — worklog comments are shown in full, with bullet and numbered lists preserved.</li>
+      <li><strong>Spot missing comments</strong> — values are shown in red where a worklog in that bucket has a blank comment.</li>
+      <li><strong>Save filters</strong> — including rolling date ranges that follow the calendar.</li>
+      <li><strong>Export to CSV</strong> — the pivot itself, or one row per worklog with its comment.</li>
     </ul>
-    <p class="note"><strong>Note:</strong> Available filters, report fields, and export options may vary by app version and permissions.</p>
+    <p class="note"><strong>Runs on Atlassian.</strong> The app sends no data to any external service — everything stays inside Atlassian. It reads Jira as <em>you</em>, so you only ever see worklogs on issues you already have permission to view.</p>
   </section>
 
   <section class="card" id="getting-started">
     <h2>Getting started</h2>
     <ol>
-      <li>Ask your Jira administrator to install or enable Worklog Report for your Jira site, if it is not already available.</li>
-      <li>Open Jira and locate Worklog Report using the app entry point provided by your administrator or the app's current navigation.</li>
-      <li>If the app requests access or displays a permission message, check that your Jira account has the necessary access and contact your administrator if needed.</li>
-      <li>Open the reporting view and choose the filters available in your installed version.</li>
+      <li>Ask a Jira administrator to install Worklog Report on your site from the Atlassian Marketplace.</li>
+      <li>In Jira, open <strong>Apps</strong> in the main navigation and choose <strong>Worklog Report</strong>.</li>
+      <li>Set <strong>From</strong> and <strong>To</strong> — both are required. The default is the 1st of the current month to today.</li>
+      <li>Click <strong>View Report</strong>.</li>
     </ol>
-    <p>Navigation labels can differ by Jira configuration and app version. Use the entry point shown in your site.</p>
+    <p>No configuration or admin setup is needed beyond installation. Every user gets their own saved filters and remembered settings.</p>
   </section>
 
   <section class="card" id="reports">
-    <h2>Create a worklog report</h2>
-    <ol>
-      <li>Open the Worklog Report screen in Jira.</li>
-      <li>Set the reporting period using the available date-range controls.</li>
-      <li>Apply the available user, project, or issue filters to narrow the results.</li>
-      <li>Review the worklog entries and any summaries shown by the app.</li>
-      <li>Adjust the filters if the results do not match the period or scope you need.</li>
-    </ol>
-    <p>For consistent reporting, confirm the selected date range and filters before exporting or sharing results.</p>
+    <h2>Build a report</h2>
+    <p>The toolbar has two rows. The first defines <em>what the report covers</em>; the second holds saved filters and the actions that run against it.</p>
+
+    <h3>Scope (first row)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Control</th><th>What it does</th></tr>
+      <tr><td><strong>Projects</strong></td><td>Limit the report to one or more projects. Leave empty for all projects you can see. Selecting projects also narrows the Users list to members of those projects.</td></tr>
+      <tr><td><strong>Users</strong></td><td>Limit the report to specific people. Leave empty for everyone.</td></tr>
+      <tr><td><strong>From / To</strong></td><td>The reporting range. Both required. Ranges spanning several months are supported.</td></tr>
+      <tr><td><strong>Period</strong></td><td>Whether each column is a <strong>Day</strong>, <strong>Week</strong> or <strong>Month</strong>. Day columns also show the weekday, and weekends are shaded.</td></tr>
+      <tr><td><strong>Categorize</strong></td><td>The first grouping level — the left-most column of the report.</td></tr>
+      <tr><td><strong>Group by</strong></td><td>An optional second grouping level.</td></tr>
+      <tr><td><strong>2nd Group</strong></td><td>An optional third grouping level.</td></tr>
+      <tr><td><strong>Time Unit</strong></td><td><strong>Decimal</strong> (1.50) or <strong>Hrs:Min</strong> (1:30).</td></tr>
+    </table>
+    </div>
+    <p>Grouping dimensions are <strong>User</strong>, <strong>Project</strong>, <strong>Issue Type</strong> and <strong>Issues</strong>. Picking the same dimension twice has no effect — it is only shown once.</p>
+
+    <h3>Actions (second row)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Control</th><th>What it does</th></tr>
+      <tr><td><strong>Saved Filters</strong></td><td>Load a previously saved combination of filters. See <a href="#presets">Saved filters</a>.</td></tr>
+      <tr><td><strong>Save Filter</strong> / <strong>Delete Filter</strong></td><td>Save the current toolbar as a named preset, or delete the selected one.</td></tr>
+      <tr><td><strong>JQL</strong></td><td>An advanced override. When filled in, it <em>replaces</em> the Projects and Users filters, which are disabled while it is active.</td></tr>
+      <tr><td><strong>Group Total</strong></td><td>Adds a subtotal row per outer group when more than one grouping level is in use.</td></tr>
+      <tr><td><strong>View Report</strong></td><td>Runs the report.</td></tr>
+      <tr><td><strong>Export CSV</strong> / <strong>Export Comments</strong></td><td>See <a href="#export">Exports</a>.</td></tr>
+    </table>
+    </div>
+
+    <h3>Reading the table</h3>
+    <ul>
+      <li>Each row ends with a <strong>Total</strong> for the whole range; the last row is a grand total across everyone.</li>
+      <li><strong>Blue</strong> values are clickable — they open the worklogs behind that number.</li>
+      <li><strong>Red</strong> values mean at least one worklog in that bucket has no comment.</li>
+      <li><code>-</code> means no time was logged.</li>
+      <li>Click a column header with the <code>⇅</code> marker to sort by it.</li>
+    </ul>
+  </section>
+
+  <section class="card" id="details">
+    <h2>Worklog details</h2>
+    <p>Click any value in the report to open the worklogs behind it:</p>
+    <ul>
+      <li>a <strong>date cell</strong> — that person's worklogs for that day, week or month;</li>
+      <li>a row's <strong>Total</strong> — all of that person's worklogs across the whole range;</li>
+      <li>a cell in the <strong>grand total row</strong> — everyone's worklogs for that column, or for the whole range.</li>
+    </ul>
+    <p>Each entry shows the issue key (a link to the issue), issue summary, the worklog comment, time spent, the <strong>Worklog Date</strong> (the day the work was logged against) and the <strong>Worklog Created Date</strong> (when it was entered into Jira — often a different day).</p>
+    <p>Comments keep their original formatting, so bullet lists and numbered lists appear as the author wrote them.</p>
+  </section>
+
+  <section class="card" id="presets">
+    <h2>Saved filters</h2>
+    <p>Click <strong>Save Filter</strong> to store the current toolbar under a name. Saved filters are private to you.</p>
+    <p>When saving, choose how the preset should handle dates:</p>
+    <ul>
+      <li><strong>Fixed dates</strong> — always reports the exact From/To that were saved. Right for a closed period, such as a finished quarter.</li>
+      <li><strong>Month to date, Last month, Week to date, Last week, Last 7 days, Last 30 days, Year to date</strong> — recalculated every time the preset is opened.</li>
+    </ul>
+    <p class="note"><strong>Tip:</strong> choose a rolling range for anything you run regularly. A preset saved as <em>Month to date</em> in November reports December when you open it in December; one saved as <em>Fixed dates</em> keeps reporting November, by design.</p>
+    <p>The dialog shows which dates your choice resolves to today, so you can confirm before saving. <strong>Delete Filter</strong> removes the selected preset after a confirmation — this cannot be undone.</p>
   </section>
 
   <section class="card" id="export">
-    <h2>Export worklog data</h2>
-    <p>Use the export option available in the report screen to download worklog data in Excel or CSV format, where supported by your installed version.</p>
+    <h2>Exports</h2>
+    <p>Both exports produce <strong>CSV</strong> files, which open directly in Excel, Google Sheets, Numbers and any other spreadsheet tool.</p>
+    <h3>Export CSV</h3>
+    <p>The pivot table exactly as shown on screen — the same rows, date columns and totals.</p>
+    <h3>Export Comments</h3>
+    <p>One row per individual worklog, with a trailing total. Columns are: Author, Date Logged, Project, Issue Key, Issue Summary, Issue Type, Hours, Comment, Worklog Created Date.</p>
+    <p>Use this when you need the comment text itself — for client reporting, invoicing backup, or checking that work has been described properly.</p>
+    <p class="note"><strong>Accented characters and symbols</strong> appear correctly in Excel: exports are written with a UTF-8 byte order mark so Excel decodes them properly rather than mangling dashes and apostrophes.</p>
+    <p>Before sharing an export, review it for confidential project detail and personal information, and follow your organisation's data-handling policies.</p>
+  </section>
+
+  <section class="card" id="permissions">
+    <h2>Permissions &amp; data</h2>
     <ul>
-      <li><strong>Excel:</strong> useful for spreadsheet review, calculations, and internal reporting.</li>
-      <li><strong>CSV:</strong> useful for importing data into spreadsheet tools or other systems that accept comma-separated values.</li>
+      <li><strong>Jira permissions are respected.</strong> The app queries Jira as the signed-in user, so people only see worklogs on issues they can already view. There is no way to use the report to see more than your Jira account allows.</li>
+      <li><strong>Automation accounts are excluded.</strong> Worklogs created by app or bot accounts are left out, so totals reflect people.</li>
+      <li><strong>No external data transfer.</strong> The app declares no outbound network access; all processing happens within Atlassian.</li>
+      <li><strong>What is stored.</strong> Only your saved filter presets and your last-used Period setting, held per user within the Atlassian platform. Worklog data itself is never copied or retained.</li>
+      <li><strong>Access requested.</strong> Read access to Jira work and user data, plus app storage for the presets above. The app makes no changes to your Jira data.</li>
     </ul>
-    <p>Before sharing an export, review it for confidential project details and personal information, and follow your organization's data-handling policies.</p>
   </section>
 
   <section class="card" id="troubleshooting">
     <h2>Troubleshooting</h2>
-    <h3>The app or report is not visible</h3>
-    <p>Confirm that the app is installed on the correct Jira site and that your account has access. Ask your Jira administrator to check the installation and permissions.</p>
-    <h3>The report is empty or incomplete</h3>
-    <p>Review the selected date range and filters. Confirm that worklogs exist for the selected scope and that your account is permitted to view the relevant Jira issues and worklogs.</p>
+
+    <h3>"Incomplete report" warning</h3>
+    <p>This means Jira did not return worklogs for some issues — usually rate limiting on a large report. The totals shown are genuine but lower than reality. Narrow the date range or the project list, or run it again in a few minutes.</p>
+
+    <h3>The report is empty</h3>
+    <p>Check the date range first. Then confirm whether the <strong>JQL</strong> box has something in it — a JQL query overrides the Projects and Users filters entirely. Finally, confirm you have permission to view the issues in question.</p>
+
+    <h3>A saved filter shows the wrong month</h3>
+    <p>It was saved with <strong>Fixed dates</strong>. Load it, adjust the dates, and re-save it with a rolling range such as <em>Month to date</em>. See <a href="#presets">Saved filters</a>.</p>
+
+    <h3>The Users list looks short</h3>
+    <p>The Users list is scoped to the projects you have selected. Clear the Projects filter to see everyone.</p>
+
+    <h3>Numbers are red</h3>
+    <p>That is deliberate: at least one worklog in that cell has no comment. Click the value to see which.</p>
+
     <h3>An export does not download</h3>
-    <p>Try the export again, check your browser's download settings, and confirm that the report contains results. If the issue continues, contact support with the steps to reproduce it and any non-sensitive error message.</p>
+    <p>Confirm the report has results, then check your browser's download settings and any pop-up blocking. If it persists, contact support with the steps to reproduce.</p>
   </section>
 
   <section class="card" id="support">
     <h2>Support</h2>
-    <p>For help with Worklog Report, contact the app publisher through the support contact shown on its Atlassian Marketplace listing.</p>
-    <p>When requesting help, include your Jira product, a brief description of the problem, the steps to reproduce it, and the app version if known. Do not send passwords, API tokens, or unnecessary personal or confidential data.</p>
+    <p>For help with Worklog Report, use the support contact shown on the app's <a href="https://marketplace.atlassian.com/">Atlassian Marketplace</a> listing.</p>
+    <p>When reporting a problem, please include: what you were trying to report on (date range, projects, users, period), what you expected versus what you saw, and the app version. Screenshots help.</p>
+    <p class="note"><strong>Please do not send</strong> passwords, API tokens, or exported worklog data containing confidential information. A description of the problem is enough to begin.</p>
   </section>
 
   <footer>
     <div class="wrap" style="padding:0">
-      <strong>TheTechFreaks</strong> · Worklog Report for Jira documentation<br>
-      This guide is a starting point. Update it to match the exact UI, features, data handling, and support channel of the released app before publishing.
+      <strong>TheTechFreaks</strong> · Worklog Report for Jira documentation
     </div>
   </footer>
 </main>
