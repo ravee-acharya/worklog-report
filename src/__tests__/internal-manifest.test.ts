@@ -10,7 +10,7 @@ import * as path from 'path';
  */
 
 const REPO = path.join(__dirname, '..', '..');
-const SCRIPT = path.join(REPO, 'scripts', 'make-internal-manifest.js');
+const SCRIPT = path.join(REPO, 'scripts', 'make-internal-manifest.cjs');
 const MARKETPLACE_ID = 'ari:cloud:ecosystem::app/ad045ff2-dddf-4d5c-9394-1e4bd6e30750';
 const INTERNAL_ID = 'ari:cloud:ecosystem::app/11111111-2222-3333-4444-555555555555';
 
@@ -21,13 +21,16 @@ function runTransform(
 ): { ok: boolean; manifest: string; output: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wl-manifest-'));
   fs.mkdirSync(path.join(dir, 'scripts'));
-  fs.copyFileSync(SCRIPT, path.join(dir, 'scripts', 'make-internal-manifest.js'));
+  fs.copyFileSync(SCRIPT, path.join(dir, 'scripts', 'make-internal-manifest.cjs'));
   fs.writeFileSync(path.join(dir, 'manifest.yml'), manifest);
+  // The repo is "type": "module"; without this the temp dir defaults to
+  // CommonJS and the test stops reproducing how CI actually runs the script.
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ type: 'module' }));
 
   let ok = true;
   let output = '';
   try {
-    output = execFileSync('node', [path.join(dir, 'scripts', 'make-internal-manifest.js')], {
+    output = execFileSync('node', [path.join(dir, 'scripts', 'make-internal-manifest.cjs')], {
       env: { ...process.env, FORGE_INTERNAL_APP_ID: appId },
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],

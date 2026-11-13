@@ -44,7 +44,7 @@ env:
   FORGE_PROD_SITES: ""
 
   # The internal, unlicensed clone of the app: same code, different Forge
-  # app id, licensing stripped (see scripts/make-internal-manifest.js). It
+  # app id, licensing stripped (see scripts/make-internal-manifest.cjs). It
   # exists so the team can keep using the report for free now that the
   # Marketplace app is licensed. Its id lives in the FORGE_INTERNAL_APP_ID
   # repo variable; when that is unset the internal job simply skips.
@@ -264,7 +264,7 @@ jobs:
         if: steps.guard.outputs.skip == 'false'
         env:
           FORGE_INTERNAL_APP_ID: ${{ vars.FORGE_INTERNAL_APP_ID }}
-        run: node scripts/make-internal-manifest.js
+        run: node scripts/make-internal-manifest.cjs
 
       - name: Deploy the internal app
         if: steps.guard.outputs.skip == 'false'
