@@ -177,21 +177,37 @@ jobs:
       - name: Upgrade production installations
         run: |
           failed=""
+          licensed=""
           for site in $FORGE_PROD_SITES; do
             echo "::group::Upgrading $site"
-            if forge install --upgrade --non-interactive \
-                 --site "$site" --product jira --environment production; then
+            out=$(forge install --upgrade --non-interactive \
+                    --site "$site" --product jira --environment production 2>&1) && ok=1 || ok=0
+            echo "$out"
+
+            if [ "$ok" = "1" ]; then
               echo "$site is up to date."
+            elif echo "$out" | grep -qi "Upgrading to a licensed app is not permitted"; then
+              # Expected, not a fault. Atlassian does not let the CLI convert an
+              # existing free installation into a licensed one — the site admin
+              # must upgrade it from Manage apps / Admin Hub instead. Failing the
+              # job here would leave production permanently red for a restriction
+              # no change to this repo can lift.
+              echo "::warning::$site must be upgraded by its Jira admin from Manage apps — the CLI cannot upgrade a free install to a licensed one."
+              licensed="$licensed $site"
             else
-              echo "::error::Upgrade failed for $site — it is still on its previous scope set."
+              echo "::error::Upgrade failed for $site — it is still on its previous version."
               failed="$failed $site"
             fi
             echo "::endgroup::"
           done
 
+          if [ -n "$licensed" ]; then
+            echo "::warning::Awaiting an admin upgrade in Manage apps for:$licensed"
+          fi
+
           if [ -n "$failed" ]; then
             echo "::error::Production code is deployed, but these installations were not upgraded:$failed"
-            echo "A Jira admin on each must consent to the new scopes (see DEPLOYMENT.md)."
+            echo "See DEPLOYMENT.md — a scope change needs a Jira admin on each site to consent."
             exit 1
           fi
-          echo "All production installations upgraded."
+          echo "All production installations handled."

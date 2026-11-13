@@ -53,6 +53,24 @@ approving the app's new scopes in **Manage apps**, or by running the install man
 forge install --upgrade --confirm-scopes --site <site>.atlassian.net --product jira --environment production
 ```
 
+## Licensed app: installs upgrade through Manage apps, not the CLI
+
+Since `app.licensing.enabled` was added, Atlassian refuses CLI upgrades of an
+installation that was created while the app was free:
+
+```
+Upgrade error: Upgrading to a licensed app is not permitted
+```
+
+This is a platform restriction, not a misconfiguration — no change to this repo
+lifts it. A **Jira admin on each site** upgrades the app from **Manage apps**
+(Admin Hub) instead. The pipeline therefore treats this specific message as a
+warning and keeps going, while any other upgrade failure still fails the job.
+
+Adding licensing also forced a **major version**, which means existing
+installations no longer auto-update at all: each site stays on its current
+version until an admin upgrades it deliberately.
+
 A first-time install on a **new** site is a manual `forge install` *without* `--upgrade`, run
 from the repo root (the command needs `manifest.yml` in the working directory):
 
