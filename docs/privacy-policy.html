@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Worklog Report for Jira | TheTechFreaks</title>
+<meta name="description" content="Privacy policy for the Worklog Report for Jira app by TheTechFreaks: what it accesses, what it stores, and where data is processed.">
+<style>
+:root{color-scheme:light;--ink:#172b4d;--muted:#44546f;--blue:#0c66e4;--line:#dfe1e6;--bg:#f7f8fa;--card:#fff}
+*{box-sizing:border-box}body{margin:0;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+header{background:linear-gradient(120deg,#0747a6,#0c66e4);color:#fff;padding:48px 22px}
+.wrap{max-width:920px;margin:auto;padding:0 22px}
+.eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:.78rem;font-weight:700;opacity:.85}
+h1{font-size:clamp(2rem,5vw,3.1rem);line-height:1.15;margin:.45rem 0}
+header p{max-width:680px;font-size:1.1rem;margin:12px 0 0}
+main{padding:28px 0 56px}
+nav,.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;margin:0 0 18px}
+nav h2,.card h2{margin-top:0}
+nav ul{display:flex;flex-wrap:wrap;gap:10px 22px;padding-left:20px;margin-bottom:0}
+a{color:var(--blue)}h2{font-size:1.45rem;margin-bottom:8px}h3{font-size:1.05rem;margin-bottom:4px}
+.note{border-left:4px solid var(--blue);padding:12px 16px;background:#e9f2ff;border-radius:4px}
+footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-size:.9rem}
+code{background:#f1f2f4;padding:2px 5px;border-radius:4px}
+table{width:100%;border-collapse:collapse;margin:12px 0}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;background:#fafbfc}
+.tablewrap{overflow-x:auto}
+.draft{border-left:4px solid #bf2600;background:#ffeceb;padding:12px 16px;border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="eyebrow">TheTechFreaks · Worklog Report for Jira</div>
+    <h1>Privacy Policy</h1>
+    <p>What the app accesses, what it stores, and where your data is processed.</p>
+  </div>
+</header>
+<main class="wrap">
+
+  <section class="card">
+    <p class="draft"><strong>Review before publishing.</strong> This describes the app's actual technical behaviour accurately, but it has not been reviewed by a lawyer, and the contact details below still need filling in. Treat it as a draft for your legal review rather than finished legal advice.</p>
+  </section>
+
+  <nav aria-label="On this page">
+    <h2>On this page</h2>
+    <ul>
+      <li><a href="#scope">Scope</a></li>
+      <li><a href="#access">What the app accesses</a></li>
+      <li><a href="#stores">What the app stores</a></li>
+      <li><a href="#where">Where data is processed</a></li>
+      <li><a href="#logs">Diagnostic logs</a></li>
+      <li><a href="#exports">Exports</a></li>
+      <li><a href="#retention">Retention and deletion</a></li>
+      <li><a href="#third-parties">Third parties</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
+  </nav>
+
+  <section class="card" id="scope">
+    <h2>Scope</h2>
+    <p>This policy covers the <strong>Worklog Report for Jira</strong> app published by TheTechFreaks on the Atlassian Marketplace. It does not cover Atlassian's own handling of your Jira data, which is governed by the <a href="https://www.atlassian.com/legal/privacy-policy">Atlassian Privacy Policy</a>.</p>
+    <p>The app is a <strong>Forge</strong> app and runs entirely on Atlassian's infrastructure. It has no servers of its own.</p>
+    <p>Last updated: 13 November 2026.</p>
+  </section>
+
+  <section class="card" id="access">
+    <h2>What the app accesses</h2>
+    <p>The app requests three permissions, all read-only except its own storage:</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Permission</th><th>Why</th></tr>
+      <tr><td><code>read:jira-work</code></td><td>Read issues and their worklogs to build the report.</td></tr>
+      <tr><td><code>read:jira-user</code></td><td>Resolve account IDs to display names, so the report shows people's names.</td></tr>
+      <tr><td><code>storage:app</code></td><td>Store your saved filter presets and your last-used Period setting.</td></tr>
+    </table>
+    </div>
+    <p class="note"><strong>The app reads Jira as you, not as itself.</strong> Every request is made with the signed-in user's own Jira permissions, so the report can never show a user worklogs or issues they could not already see in Jira. Installing the app grants it no visibility beyond that.</p>
+    <p>The app makes <strong>no changes</strong> to your Jira data. It does not create, edit or delete issues, worklogs or comments.</p>
+  </section>
+
+  <section class="card" id="stores">
+    <h2>What the app stores</h2>
+    <p>Only two things are stored, both in Atlassian-hosted Forge storage, keyed to your Atlassian account ID:</p>
+    <h3>Saved filter presets</h3>
+    <p>When you choose to save a filter, the app stores the preset name together with the filter settings it describes: selected project keys, selected user account IDs, the date range or rolling date rule, period, grouping choices, time unit, timezone, and any JQL you entered.</p>
+    <h3>Your Period preference</h3>
+    <p>The last Period (Day, Week or Month) you selected, so the app opens the way you left it.</p>
+    <p class="note"><strong>Worklog data itself is never stored.</strong> Issues, worklogs, comments, hours and names are fetched from Jira each time you run a report, used to render the page, and discarded. The app keeps no copy and builds no database of your work records.</p>
+    <p>Saved presets are private to the user who created them. One user cannot read, change or delete another user's presets.</p>
+  </section>
+
+  <section class="card" id="where">
+    <h2>Where data is processed</h2>
+    <p>Entirely within Atlassian. The app declares <strong>no external network access</strong> — its manifest contains no outbound egress permissions, which Atlassian enforces at the platform level. It therefore cannot send your data to TheTechFreaks or to any other destination, and no data leaves the Atlassian environment your Jira site already runs in.</p>
+    <p>This is why the app carries the <strong>Runs on Atlassian</strong> badge on the Atlassian Marketplace.</p>
+  </section>
+
+  <section class="card" id="logs">
+    <h2>Diagnostic logs</h2>
+    <p>Like any Forge app, the app writes diagnostic messages to Atlassian's logging platform. These can be viewed by TheTechFreaks only if your site administrator has enabled log sharing for the app.</p>
+    <p>What may appear in those logs:</p>
+    <ul>
+      <li>Issue keys, when worklogs for a particular issue could not be fetched.</li>
+      <li>Error messages and stack traces when something fails.</li>
+      <li>For errors raised in the browser: the browser's user agent string and the page URL.</li>
+    </ul>
+    <p>The app does not deliberately log worklog comments, hours, or user names. Log retention is controlled by Atlassian, not by TheTechFreaks.</p>
+  </section>
+
+  <section class="card" id="exports">
+    <h2>Exports</h2>
+    <p>The CSV exports are assembled in your own browser and saved directly to your device. They are not uploaded, emailed, or transmitted anywhere, and TheTechFreaks never receives a copy.</p>
+    <p>Once a file is on your device it is outside the app's control. Exports can contain worklog comments and people's names, so handle and share them according to your organisation's own policies.</p>
+  </section>
+
+  <section class="card" id="retention">
+    <h2>Retention and deletion</h2>
+    <p>Saved presets and your Period preference persist until you delete them or the app is uninstalled.</p>
+    <ul>
+      <li><strong>Delete a preset</strong> — use <em>Delete Filter</em> in the app. This removes it immediately and permanently.</li>
+      <li><strong>Remove everything</strong> — uninstalling the app from your Jira site removes its Forge storage, including all users' presets and preferences, in line with Atlassian's data deletion process.</li>
+    </ul>
+    <p>Because no worklog data is stored, there is nothing further to erase: the underlying worklogs remain in your Jira, under your control.</p>
+  </section>
+
+  <section class="card" id="third-parties">
+    <h2>Third parties</h2>
+    <p>There are none. The app uses no analytics, no advertising, no tracking pixels and no third-party services. It sets no cookies of its own. Atlassian is the only processor involved, as the platform the app runs on and the system your Jira data already lives in.</p>
+  </section>
+
+  <section class="card" id="contact">
+    <h2>Contact</h2>
+    <p>For privacy questions about this app, or to exercise rights you have over your personal data, contact TheTechFreaks at <strong>[privacy contact email — to be completed]</strong>.</p>
+    <p>For bug reports and general support, see <a href="https://github.com/ravee-acharya/worklog-report/issues">the app's issue tracker</a>. Please do not include credentials or confidential data in a public issue.</p>
+    <p>Because the app stores so little, most data requests are best directed at your own Jira administrator, who controls the underlying worklog data.</p>
+  </section>
+
+  <section class="card">
+    <h2>Changes to this policy</h2>
+    <p>If the app's data handling changes — for example if it ever gains outbound network access or begins storing additional data — this policy will be updated before that version is released, and the "last updated" date above will change.</p>
+  </section>
+
+  <footer>
+    <div class="wrap" style="padding:0">
+      <strong>TheTechFreaks</strong> · <a href="./">Worklog Report for Jira documentation</a>
+    </div>
+  </footer>
+</main>
+</body>
+</html>
