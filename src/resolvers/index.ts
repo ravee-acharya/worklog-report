@@ -68,6 +68,14 @@ async function safeJsonResponse<T>(response: APIResponse): Promise<T> {
  */
 const WORKLOG_FETCH_BUDGET_MS = 18000;
 
+/**
+ * Retry budget for the dropdown-populating fetches. Lower than the worklog
+ * budget: four of these run concurrently, and a filter list that arrives late
+ * is worse than one that arrives incomplete — the user cannot start at all
+ * until the dropdowns are there.
+ */
+const FILTER_FETCH_BUDGET_MS = 12000;
+
 const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 250;
@@ -136,11 +144,16 @@ async function fetchAllProjects(): Promise<Array<{ key: string; name: string }>>
   const projects: Array<{ key: string; name: string }> = [];
   let startAt = 0;
   const maxResults = 100;
+  const deadline = Date.now() + FILTER_FETCH_BUDGET_MS;
 
   while (true) {
-    const response = await api
-      .asUser()
-      .requestJira(route`/rest/api/3/project/search?startAt=${startAt}&maxResults=${maxResults}`);
+    const response = await requestJiraWithRetry(
+      () =>
+        api
+          .asUser()
+          .requestJira(route`/rest/api/3/project/search?startAt=${startAt}&maxResults=${maxResults}`),
+      deadline,
+    );
 
     const data = await safeJsonResponse<{
       values: Array<{ key: string; name: string }>;
@@ -170,11 +183,16 @@ async function fetchAllUsers(): Promise<Array<{ accountId: string; displayName: 
   const users: Array<{ accountId: string; displayName: string }> = [];
   let startAt = 0;
   const maxResults = 100;
+  const deadline = Date.now() + FILTER_FETCH_BUDGET_MS;
 
   while (true) {
-    const response = await api
-      .asUser()
-      .requestJira(route`/rest/api/3/users/search?startAt=${startAt}&maxResults=${maxResults}`);
+    const response = await requestJiraWithRetry(
+      () =>
+        api
+          .asUser()
+          .requestJira(route`/rest/api/3/users/search?startAt=${startAt}&maxResults=${maxResults}`),
+      deadline,
+    );
 
     const data = await safeJsonResponse<
       Array<{ accountId: string; displayName: string; accountType?: string; active?: boolean }>
@@ -223,13 +241,18 @@ async function fetchAssignableUsersForProject(
   const users: Array<{ accountId: string; displayName: string }> = [];
   let startAt = 0;
   const maxResults = 50;
+  const deadline = Date.now() + FILTER_FETCH_BUDGET_MS;
 
   while (true) {
-    const response = await api
-      .asUser()
-      .requestJira(
-        route`/rest/api/3/user/assignable/multiProjectSearch?projectKeys=${projectKey}&startAt=${startAt}&maxResults=${maxResults}`,
-      );
+    const response = await requestJiraWithRetry(
+      () =>
+        api
+          .asUser()
+          .requestJira(
+            route`/rest/api/3/user/assignable/multiProjectSearch?projectKeys=${projectKey}&startAt=${startAt}&maxResults=${maxResults}`,
+          ),
+      deadline,
+    );
 
     const data = await safeJsonResponse<
       Array<{ accountId: string; displayName: string; accountType?: string; active?: boolean }>
@@ -331,11 +354,15 @@ async function fetchEpics(): Promise<Array<{ key: string; summary: string }>> {
       body.nextPageToken = nextPageToken;
     }
 
-    const response = await api.asUser().requestJira(route`/rest/api/3/search/jql`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const response = await requestJiraWithRetry(
+      () =>
+        api.asUser().requestJira(route`/rest/api/3/search/jql`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      Date.now() + FILTER_FETCH_BUDGET_MS,
+    );
 
     const data = await safeJsonResponse<{
       issues: Array<{ key: string; fields: { summary: string } }>;
@@ -364,7 +391,10 @@ async function fetchIssueTypes(): Promise<string[]> {
   const issueTypeSet = new Set<string>();
 
   // Use issue type search to get all available issue types
-  const response = await api.asUser().requestJira(route`/rest/api/3/issuetype`);
+  const response = await requestJiraWithRetry(
+    () => api.asUser().requestJira(route`/rest/api/3/issuetype`),
+    Date.now() + FILTER_FETCH_BUDGET_MS,
+  );
   const data = await safeJsonResponse<Array<{ name: string }>>(response);
   const types = Array.isArray(data) ? data : [];
 
@@ -1516,31 +1546,40 @@ resolver.define('getFilterOptions', async (req: ResolverRequest): Promise<Filter
     fetchIssueTypes(),
   ]);
 
+  // Each list is reported so the UI can say a dropdown is empty because the
+  // fetch failed, not because there is nothing to show. A partial result is
+  // still returned: losing Epics should not cost the user their Projects.
+  const failedParts: string[] = [];
+
   if (results[0].status === 'fulfilled') {
     projects = results[0].value;
   } else {
     console.warn('Failed to fetch projects:', results[0].reason);
+    failedParts.push('projects');
   }
 
   if (results[1].status === 'fulfilled') {
     users = results[1].value;
   } else {
     console.warn('Failed to fetch users:', results[1].reason);
+    failedParts.push('users');
   }
 
   if (results[2].status === 'fulfilled') {
     epics = results[2].value;
   } else {
     console.warn('Failed to fetch epics:', results[2].reason);
+    failedParts.push('epics');
   }
 
   if (results[3].status === 'fulfilled') {
     issueTypes = results[3].value;
   } else {
     console.warn('Failed to fetch issue types:', results[3].reason);
+    failedParts.push('issue types');
   }
 
-  return { projects, users, epics, issueTypes };
+  return { projects, users, epics, issueTypes, failedParts };
 });
 
 // ---------------------------------------------------------------------------

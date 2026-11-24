@@ -70,6 +70,13 @@ export interface FilterOptions {
   users: Array<{ accountId: string; displayName: string }>;
   epics: Array<{ key: string; summary: string }>;
   issueTypes: string[];
+  /** Which of the lists above could not be loaded, e.g. ['projects'].
+   *
+   * Each list is fetched independently and a failure yields an empty array,
+   * so without this an outage is indistinguishable from "this site has no
+   * projects" — which is exactly how a Jira hiccup once presented to users as
+   * silently empty dropdowns. Absent or empty means everything loaded. */
+  failedParts?: string[];
 }
 
 /**

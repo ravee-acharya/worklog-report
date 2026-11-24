@@ -1571,6 +1571,10 @@ export const App = (): JSX.Element => {
   // left silent, because the failure mode it replaces (a throttled report
   // rendering as an empty one) is indistinguishable from a real empty result.
   const [failedIssueCount, setFailedIssueCount] = useState(0);
+  // Filter lists that failed to load. An empty Projects dropdown caused by a
+  // Jira outage looks identical to a site with no projects, so the cause is
+  // named rather than left for the user to guess at.
+  const [failedFilterParts, setFailedFilterParts] = useState<string[]>([]);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -1691,6 +1695,7 @@ export const App = (): JSX.Element => {
         }
 
         setFilterOptions(options);
+        setFailedFilterParts(Array.isArray(options.failedParts) ? options.failedParts : []);
         const presetList = Array.isArray(presetsResp?.presets) ? presetsResp.presets : [];
         setPresets(presetList);
       } catch (err) {
@@ -2625,6 +2630,17 @@ export const App = (): JSX.Element => {
           </SectionMessage>
         )}
 
+        {/* A filter list failed to load, so its dropdown is empty for a reason
+            that has nothing to do with the data. Reported because the two are
+            indistinguishable on screen otherwise. */}
+        {failedFilterParts.length > 0 && (
+          <SectionMessage appearance="warning" title="Some filters couldn't load">
+            <Text>
+              {`Jira didn't return the ${failedFilterParts.join(' and ')} list, so ${failedFilterParts.length === 1 ? 'that dropdown is' : 'those dropdowns are'} empty — this is not a sign that none exist. Reload the page to try again; if it persists, Jira may be rate-limiting or temporarily unavailable.`}
+            </Text>
+          </SectionMessage>
+        )}
+
         {/* Incomplete data — Jira refused some worklog requests (usually rate
             limiting under load). The numbers below are real but too low, and
             saying so is the whole point: this previously rendered as an
@@ -2670,6 +2686,9 @@ export const App = (): JSX.Element => {
                           // changing the selection again — see userCascadeSeqRef.
                           if (seq !== userCascadeSeqRef.current) return;
                           if (newOpts) {
+                            setFailedFilterParts(
+                              Array.isArray(newOpts.failedParts) ? newOpts.failedParts : [],
+                            );
                             setFilterOptions((prev) => prev ? { ...prev, users: newOpts.users } : prev);
                             // Remove any selected users no longer in the refreshed list
                             const validIds = new Set(newOpts.users.map((u) => u.accountId));

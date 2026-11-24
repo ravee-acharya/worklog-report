@@ -694,6 +694,91 @@ describe('saveFilterPreset dateMode', () => {
 });
 
 // ===========================================================================
+// Filter options: silent-empty regression
+//
+// Users once found the Projects and Users dropdowns simply empty, with no
+// error, on a day nothing was deployed. getFilterOptions fetches each list
+// independently and a rejected fetch yielded an empty array, so an outage was
+// indistinguishable from a site with nothing in it. These cover both halves of
+// the fix: the fetches retry, and whatever still fails is reported.
+// ===========================================================================
+
+describe('getFilterOptions resilience', () => {
+  it('retries a throttled project search instead of returning no projects', async () => {
+    addEpicFixture([]);
+    addIssueTypeFixture([]);
+    addUserFixture([]);
+
+    let calls = 0;
+    harness.addFixtureHandler((method, path) => {
+      if (method !== 'GET' || !path.includes('/project/search')) return undefined;
+      calls++;
+      return calls === 1
+        ? { status: 429, headers: { 'retry-after': '0' }, body: { message: 'Rate limit' } }
+        : {
+          status: 200,
+          body: { values: [{ key: 'PROJ', name: 'Project Alpha' }], isLast: true, startAt: 0, maxResults: 100 },
+        };
+    });
+
+    const result = await harness.invoke<FilterOptions>('getFilterOptions', { payload: {} });
+
+    expect(calls).toBe(2);
+    expect(result.data.projects.map((p) => p.key)).toEqual(['PROJ']);
+    expect(result.data.failedParts ?? []).toEqual([]);
+  });
+
+  // The reported symptom, stated directly: an empty dropdown must never be
+  // silent about why it is empty.
+  it('reports projects as failed rather than returning an unexplained empty list', async () => {
+    addEpicFixture([]);
+    addIssueTypeFixture([]);
+    addUserFixture([]);
+
+    harness.addFixtureHandler((method, path) =>
+      method === 'GET' && path.includes('/project/search')
+        ? { status: 429, headers: { 'retry-after': '0' }, body: { message: 'Rate limit' } }
+        : undefined,
+    );
+
+    const result = await harness.invoke<FilterOptions>('getFilterOptions', { payload: {} });
+
+    expect(result.data.projects).toEqual([]);
+    expect(result.data.failedParts).toContain('projects');
+  });
+
+  it('reports users as failed independently of projects', async () => {
+    addProjectFixture([{ key: 'PROJ', name: 'Project Alpha' }]);
+    addEpicFixture([]);
+    addIssueTypeFixture([]);
+
+    harness.addFixtureHandler((method, path) =>
+      method === 'GET' && path.includes('/users/search')
+        ? { status: 503, body: { message: 'Unavailable' } }
+        : undefined,
+    );
+
+    const result = await harness.invoke<FilterOptions>('getFilterOptions', { payload: {} });
+
+    // Losing one list must not cost the user the others.
+    expect(result.data.projects.map((p) => p.key)).toEqual(['PROJ']);
+    expect(result.data.failedParts).toEqual(['users']);
+  });
+
+  it('leaves failedParts empty when everything loads', async () => {
+    addProjectFixture();
+    addUserFixture();
+    addEpicFixture([]);
+    addIssueTypeFixture([]);
+
+    const result = await harness.invoke<FilterOptions>('getFilterOptions', { payload: {} });
+
+    expect(result.data.failedParts ?? []).toEqual([]);
+    expect(result.data.projects.length).toBeGreaterThan(0);
+  });
+});
+
+// ===========================================================================
 // Throttling / partial-failure handling
 //
 // A report fans out to one worklog call per issue. These used to swallow
